@@ -25,7 +25,23 @@ class ClaudeSessionMonitor: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Double-tap on MacBook surface → auto-approve first pending permission
+        EventMonitors.shared.doubleTap
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.approveFirstPending()
+            }
+            .store(in: &cancellables)
+
         InterruptWatcherManager.shared.delegate = self
+    }
+
+    /// Approve the first session that is waiting for permission
+    private func approveFirstPending() {
+        guard let session = instances.first(where: { $0.activePermission != nil }) else {
+            return
+        }
+        approvePermission(sessionId: session.sessionId)
     }
 
     // MARK: - Monitoring Lifecycle
