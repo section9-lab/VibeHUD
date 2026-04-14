@@ -5,8 +5,8 @@
     A macOS menu bar app that brings Dynamic Island-style notifications to Claude Code CLI sessions.
     <br />
     <br />
-    <a href="https://github.com/farouqaldori/vibe-hud/releases/latest" target="_blank" rel="noopener noreferrer">
-      <img src="https://img.shields.io/github/v/release/farouqaldori/vibe-hud?style=rounded&color=white&labelColor=000000&label=release" alt="Release Version" />
+    <a href="https://github.com/section9-lab/VibeHUD/releases/latest" target="_blank" rel="noopener noreferrer">
+      <img src="https://img.shields.io/github/v/release/section9-lab/VibeHUD?style=rounded&color=white&labelColor=000000&label=release" alt="Release Version" />
     </a>
     <a href="#" target="_blank" rel="noopener noreferrer">
       <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/farouqaldori/vibe-hud/total?style=rounded&color=white&labelColor=000000">

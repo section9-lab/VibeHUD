@@ -7,9 +7,9 @@
 
 import ApplicationServices
 import Combine
-import SwiftUI
 import ServiceManagement
 import Sparkle
+import SwiftUI
 
 // MARK: - NotchMenuView
 
@@ -93,7 +93,7 @@ struct NotchMenuView: View {
                     icon: "star",
                     label: "Star on GitHub"
                 ) {
-                    if let url = URL(string: "https://github.com/farouqaldori/vibe-hud") {
+                    if let url = URL(string: "https://github.com/section9-lab/VibeHUD") {
                         NSWorkspace.shared.open(url)
                     }
                 }
@@ -156,7 +156,10 @@ struct UpdateRow: View {
                             .font(.system(size: 12))
                             .foregroundColor(TerminalColors.blue)
                             .rotationEffect(.degrees(isSpinning ? 360 : 0))
-                            .animation(.linear(duration: 1).repeatForever(autoreverses: false), value: isSpinning)
+                            .animation(
+                                .linear(duration: 1).repeatForever(autoreverses: false),
+                                value: isSpinning
+                            )
                             .onAppear { isSpinning = true }
                     } else {
                         Image(systemName: icon)
@@ -427,7 +430,9 @@ struct AccessibilityRow: View {
                 .fill(isHovered ? Color.white.opacity(0.08) : Color.clear)
         )
         .onHover { isHovered = $0 }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+        .onReceive(
+            NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+        ) { _ in
             refreshTrigger.toggle()
         }
     }
@@ -437,7 +442,9 @@ struct AccessibilityRow: View {
     }
 
     private func openAccessibilitySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+        if let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        {
             NSWorkspace.shared.open(url)
         }
     }

@@ -104,7 +104,8 @@ class NotchViewModel: ObservableObject {
 
     // MARK: - Initialization
 
-    init(deviceNotchRect: CGRect, screenRect: CGRect, windowHeight: CGFloat, hasPhysicalNotch: Bool) {
+    init(deviceNotchRect: CGRect, screenRect: CGRect, windowHeight: CGFloat, hasPhysicalNotch: Bool)
+    {
         self.geometry = NotchGeometry(
             deviceNotchRect: deviceNotchRect,
             screenRect: screenRect,
@@ -158,7 +159,8 @@ class NotchViewModel: ObservableObject {
 
     private func handleMouseMove(_ location: CGPoint) {
         let inNotch = geometry.isPointInNotch(location)
-        let inOpened = status == .opened && geometry.isPointInOpenedPanel(location, size: openedSize)
+        let inOpened =
+            status == .opened && geometry.isPointInOpenedPanel(location, size: openedSize)
 
         let newHovering = inNotch || inOpened
 
@@ -178,7 +180,7 @@ class NotchViewModel: ObservableObject {
                 self.notchOpen(reason: .hover)
             }
             hoverTimer = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
         }
     }
 
