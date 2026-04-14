@@ -422,9 +422,30 @@ struct ChatView: View {
     /// Bar for interactive tools like AskUserQuestion that need terminal input
     private var interactivePromptBar: some View {
         ChatInteractivePromptBar(
+            questions: askUserQuestions,
             isInTmux: session.isInTmux,
+            onAnswer: { answer in
+                Task { await sendToSession(answer) }
+            },
             onGoToTerminal: { focusTerminal() }
         )
+    }
+
+    /// Parse questions and options from AskUserQuestion toolInput
+    private var askUserQuestions: [AskUserQuestionItem] {
+        guard let toolInput = session.activePermission?.toolInput,
+              let questionsRaw = toolInput["questions"]?.value as? [[String: Any]]
+        else { return [] }
+
+        return questionsRaw.compactMap { q in
+            guard let question = q["question"] as? String else { return nil }
+            let multiSelect = q["multiSelect"] as? Bool ?? false
+            let optionsRaw = q["options"] as? [[String: Any]] ?? []
+            let options = optionsRaw.compactMap { o -> String? in
+                o["label"] as? String
+            }
+            return AskUserQuestionItem(question: question, options: options, multiSelect: multiSelect)
+        }
     }
 
     // MARK: - Autoscroll Management
@@ -1047,69 +1068,174 @@ struct InterruptedMessageView: View {
     }
 }
 
+// MARK: - AskUserQuestion data model
+
+struct AskUserQuestionItem {
+    let question: String
+    let options: [String]
+    let multiSelect: Bool
+}
+
 // MARK: - Chat Interactive Prompt Bar
 
-/// Bar for interactive tools like AskUserQuestion that need terminal input
+/// Bar for AskUserQuestion — shows options as tappable buttons when available
 struct ChatInteractivePromptBar: View {
+    let questions: [AskUserQuestionItem]
     let isInTmux: Bool
+    let onAnswer: (String) -> Void
     let onGoToTerminal: () -> Void
 
     @State private var showContent = false
-    @State private var showButton = false
+    @State private var selectedOptions: Set<String> = []
+
+    private var hasOptions: Bool {
+        questions.contains { !$0.options.isEmpty }
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Tool info - same style as approval bar
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header
+            HStack(spacing: 6) {
                 Text(MCPToolFormatter.formatToolName("AskUserQuestion"))
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundColor(TerminalColors.amber)
-                Text("Claude Code needs your input")
-                    .font(.system(size: 11))
-                    .foregroundColor(.white.opacity(0.5))
-                    .lineLimit(1)
-            }
-            .opacity(showContent ? 1 : 0)
-            .offset(x: showContent ? 0 : -10)
-
-            Spacer()
-
-            // Terminal button on right (similar to Allow button)
-            Button {
-                if isInTmux {
-                    onGoToTerminal()
+                Spacer()
+                if !hasOptions {
+                    // No options: show Terminal button as fallback
+                    Button {
+                        onGoToTerminal()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "terminal")
+                                .font(.system(size: 11, weight: .medium))
+                            Text("Terminal")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.9))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "terminal")
-                        .font(.system(size: 11, weight: .medium))
-                    Text("Terminal")
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .foregroundColor(isInTmux ? .black : .white.opacity(0.4))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(isInTmux ? Color.white.opacity(0.95) : Color.white.opacity(0.1))
-                .clipShape(Capsule())
             }
-            .buttonStyle(.plain)
-            .opacity(showButton ? 1 : 0)
-            .scaleEffect(showButton ? 1 : 0.8)
+
+            // Questions + options
+            if hasOptions {
+                ForEach(Array(questions.enumerated()), id: \.offset) { _, item in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(item.question)
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.7))
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        FlowLayout(spacing: 6) {
+                            ForEach(item.options, id: \.self) { option in
+                                let isSelected = selectedOptions.contains(option)
+                                Button {
+                                    if item.multiSelect {
+                                        if isSelected {
+                                            selectedOptions.remove(option)
+                                        } else {
+                                            selectedOptions.insert(option)
+                                        }
+                                    } else {
+                                        onAnswer(option)
+                                    }
+                                } label: {
+                                    Text(option)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(isSelected ? .black : .white.opacity(0.85))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .fill(isSelected ? Color.white.opacity(0.9) : Color.white.opacity(0.1))
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            // Confirm button for multiSelect
+                            if item.multiSelect && !selectedOptions.isEmpty {
+                                Button {
+                                    onAnswer(selectedOptions.sorted().joined(separator: ", "))
+                                    selectedOptions.removeAll()
+                                } label: {
+                                    Text("Confirm")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .fill(TerminalColors.amber)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
         }
-        .frame(minHeight: 44)  // Consistent height with other bars
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Color.black.opacity(0.2))
+        .opacity(showContent ? 1 : 0)
+        .offset(y: showContent ? 0 : 8)
         .onAppear {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.05)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.75).delay(0.05)) {
                 showContent = true
-            }
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.7).delay(0.1)) {
-                showButton = true
             }
         }
     }
 }
+
+// MARK: - FlowLayout (wrapping HStack)
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth && x > 0 {
+                y += rowHeight + spacing
+                x = 0
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: maxWidth, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX && x > bounds.minX {
+                y += rowHeight + spacing
+                x = bounds.minX
+                rowHeight = 0
+            }
+            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
 
 // MARK: - Chat Approval Bar
 
