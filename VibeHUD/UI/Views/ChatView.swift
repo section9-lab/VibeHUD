@@ -483,8 +483,8 @@ struct ChatView: View {
 
         if session.isInTmux, let target = await findTmuxTarget(tty: tty) {
             _ = await ToolApprovalHandler.shared.sendMessage(text, to: target)
-        } else {
-            _ = await TtyMessageSender(ttyPath: tty).sendMessage(text)
+        } else if let pid = session.pid {
+            _ = await TtyMessageSender(pid: pid).sendMessage(text)
         }
     }
 

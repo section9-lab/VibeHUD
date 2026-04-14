@@ -2,22 +2,51 @@
 //  TtyMessageSender.swift
 //  VibeHUD
 //
-//  Sends messages to a Claude Code session by writing directly to its tty device.
-//  Works with any terminal (Ghostty, iTerm2, Terminal.app, etc.) without requiring tmux.
+//  Sends messages to a Claude Code session running in a non-tmux terminal
+//  by using osascript to inject keystrokes via System Events.
 //
 
+import AppKit
 import Foundation
 
 struct TtyMessageSender {
-    let ttyPath: String  // e.g. "ttys001" (without /dev/ prefix)
+    let pid: Int  // Claude process PID
 
     func sendMessage(_ message: String) async -> Bool {
-        let fullPath = "/dev/\(ttyPath)"
-        let fd = open(fullPath, O_WRONLY | O_NOCTTY)
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-        let text = message + "\n"
-        let bytes = Array(text.utf8)
-        return write(fd, bytes, bytes.count) == bytes.count
+        // Walk up the process tree to find the parent terminal app PID
+        let tree = ProcessTreeBuilder.shared.buildTree()
+        guard let terminalPid = ProcessTreeBuilder.shared.findTerminalPid(forProcess: pid, tree: tree) else {
+            return false
+        }
+
+        // Escape the message for AppleScript string literal
+        let escaped = message
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+
+        // Use System Events to keystroke into the terminal process
+        // This requires Accessibility permission (already requested by VibeHUD)
+        let script = """
+        tell application "System Events"
+            set frontApp to name of first application process whose frontmost is true
+            set targetProc to first application process whose unix id is \(terminalPid)
+            set frontmost of targetProc to true
+            delay 0.1
+            keystroke "\(escaped)"
+            key code 36
+            delay 0.05
+            set frontmost of first application process whose name is frontApp to true
+        end tell
+        """
+
+        do {
+            _ = try await ProcessExecutor.shared.run(
+                "/usr/bin/osascript",
+                arguments: ["-e", script]
+            )
+            return true
+        } catch {
+            return false
+        }
     }
 }
