@@ -58,7 +58,7 @@ enum ClaudePaths {
         claudeDir.appendingPathComponent("settings.json")
     }
 
-    static var projectsDir: URL {
+    nonisolated static var projectsDir: URL {
         claudeDir.appendingPathComponent("projects")
     }
 

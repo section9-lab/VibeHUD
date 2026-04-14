@@ -49,7 +49,7 @@ actor ConversationParser {
     nonisolated static let logger = Logger(subsystem: "com.vibehud", category: "Parser")
 
     /// Shared ISO8601 date formatter (expensive to create, reused across all message parsing)
-    nonisolated private static let isoFormatter: ISO8601DateFormatter = {
+    private let isoFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
@@ -140,7 +140,7 @@ actor ConversationParser {
         var lastUserMessageDate: Date?
         var usage = UsageInfo()
 
-        let formatter = Self.isoFormatter
+        let formatter = isoFormatter
 
         // First pass: collect usage from all assistant messages
         for line in lines {
@@ -508,7 +508,7 @@ actor ConversationParser {
     }
 
     /// Build session file path
-    private static func sessionFilePath(sessionId: String, cwd: String) -> String {
+    nonisolated private static func sessionFilePath(sessionId: String, cwd: String) -> String {
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
         return ClaudePaths.projectsDir.path + "/" + projectDir + "/" + sessionId + ".jsonl"
     }
@@ -555,7 +555,7 @@ actor ConversationParser {
 
         let timestamp: Date
         if let timestampStr = json["timestamp"] as? String {
-            timestamp = Self.isoFormatter.date(from: timestampStr) ?? Date()
+            timestamp = isoFormatter.date(from: timestampStr) ?? Date()
         } else {
             timestamp = Date()
         }
