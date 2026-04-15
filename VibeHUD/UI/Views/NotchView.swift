@@ -460,7 +460,7 @@ struct NotchView: View {
                     let shouldPlaySound = await shouldPlayNotificationSound(for: newlyWaitingSessions)
                     if shouldPlaySound {
                         await MainActor.run {
-                            NSSound(named: soundName)?.play()
+                            _ = NSSound(named: soundName)?.play()
                         }
                     }
                 }

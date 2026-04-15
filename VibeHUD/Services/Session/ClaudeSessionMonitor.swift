@@ -25,23 +25,7 @@ class ClaudeSessionMonitor: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Double-tap on MacBook surface → auto-approve first pending permission
-        EventMonitors.shared.doubleTap
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.approveFirstPending()
-            }
-            .store(in: &cancellables)
-
         InterruptWatcherManager.shared.delegate = self
-    }
-
-    /// Approve the first session that is waiting for permission
-    private func approveFirstPending() {
-        guard let session = instances.first(where: { $0.activePermission != nil }) else {
-            return
-        }
-        approvePermission(sessionId: session.sessionId)
     }
 
     // MARK: - Monitoring Lifecycle
@@ -135,6 +119,20 @@ class ClaudeSessionMonitor: ObservableObject {
                 .permissionDenied(sessionId: sessionId, toolUseId: permission.toolUseId, reason: reason)
             )
         }
+    }
+
+    /// Send an interactive answer (e.g. AskUserQuestion option) to a session terminal.
+    func sendInteractiveAnswer(sessionId: String, text: String) async -> Bool {
+        guard let session = await SessionStore.shared.session(for: sessionId) else {
+            print("[ClaudeSessionMonitor] Missing session for interactive answer: \(sessionId)")
+            return false
+        }
+
+        let sent = await ReplyRouter.shared.sendReply(text, for: session)
+        if !sent {
+            print("[ClaudeSessionMonitor] No delivery path succeeded for interactive answer. session=\(session.sessionId)")
+        }
+        return sent
     }
 
     /// Archive (remove) a session from the instances list

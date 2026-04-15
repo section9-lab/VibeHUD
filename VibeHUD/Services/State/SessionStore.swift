@@ -139,6 +139,21 @@ actor SessionStore {
         if let tty = event.tty {
             session.tty = tty.replacingOccurrences(of: "/dev/", with: "")
         }
+        if let inputSocket = event.inputSocket, !inputSocket.isEmpty {
+            session.inputSocketPath = inputSocket
+        }
+        if let terminalBundleId = event.terminalBundleId, !terminalBundleId.isEmpty {
+            session.terminalBundleId = terminalBundleId
+        }
+        if let terminalPid = event.terminalPid {
+            session.terminalPid = terminalPid
+        }
+        if let tmuxPane = event.tmuxPane, !tmuxPane.isEmpty {
+            session.tmuxPane = tmuxPane
+        }
+        if let tmuxSocket = event.tmuxSocket, !tmuxSocket.isEmpty {
+            session.tmuxSocketPath = tmuxSocket
+        }
         session.lastActivity = Date()
 
         if event.status == "ended" {
@@ -182,6 +197,11 @@ actor SessionStore {
             projectName: URL(fileURLWithPath: event.cwd).lastPathComponent,
             pid: event.pid,
             tty: event.tty?.replacingOccurrences(of: "/dev/", with: ""),
+            inputSocketPath: event.inputSocket,
+            terminalBundleId: event.terminalBundleId,
+            terminalPid: event.terminalPid,
+            tmuxPane: event.tmuxPane,
+            tmuxSocketPath: event.tmuxSocket,
             isInTmux: false,  // Will be updated
             phase: .idle
         )

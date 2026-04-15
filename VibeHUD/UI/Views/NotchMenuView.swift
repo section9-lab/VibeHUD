@@ -20,6 +20,7 @@ struct NotchMenuView: View {
     @ObservedObject private var soundSelector = SoundSelector.shared
     @State private var hooksInstalled: Bool = false
     @State private var launchAtLogin: Bool = false
+    @State private var sensorHelperStatus: SMAppService.Status = .notRegistered
 
     var body: some View {
         // ScrollView so the menu gracefully scrolls when content exceeds the
@@ -41,6 +42,9 @@ struct NotchMenuView: View {
                 // Appearance settings
                 ScreenPickerRow(screenSelector: screenSelector)
                 SoundPickerRow(soundSelector: soundSelector)
+                SensorHelperSensitivityRow(status: sensorHelperStatus) {
+                    handleSensorHelperAction()
+                }
                 ClaudeDirPickerRow()
 
                 Divider()
@@ -122,12 +126,38 @@ struct NotchMenuView: View {
                 refreshStates()
             }
         }
+        .onReceive(
+            NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+        ) { _ in
+            refreshStates()
+        }
     }
 
     private func refreshStates() {
         hooksInstalled = HookInstaller.isInstalled()
         launchAtLogin = SMAppService.mainApp.status == .enabled
+        sensorHelperStatus = SensorPrivilegedHelperManager.shared.status
         screenSelector.refreshScreens()
+    }
+
+    private func handleSensorHelperAction() {
+        func installHelper() {
+            DispatchQueue.global(qos: .userInitiated).async {
+                _ = SensorPrivilegedHelperManager.shared.installHelper()
+                DispatchQueue.main.async { refreshStates() }
+            }
+        }
+
+        switch sensorHelperStatus {
+        case .enabled:
+            refreshStates()
+        case .requiresApproval:
+            SensorPrivilegedHelperManager.shared.openApprovalSettings()
+        case .notRegistered, .notFound:
+            installHelper()
+        @unknown default:
+            installHelper()
+        }
     }
 }
 
@@ -448,6 +478,122 @@ struct AccessibilityRow: View {
             NSWorkspace.shared.open(url)
         }
     }
+}
+
+struct SensorHelperSensitivityRow: View {
+    let status: SMAppService.Status
+    let action: () -> Void
+
+    @State private var isHovered = false
+    @State private var isEnabled: Bool = AppSettings.vibrationTapEnabled
+    @State private var sensitivityLevel: Double = AppSettings.vibrationSensitivityLevel
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "waveform.path.badge.plus")
+                    .font(.system(size: 12))
+                    .foregroundColor(textColor)
+                    .frame(width: 16)
+
+                Text("Sensor Helper")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(textColor)
+
+                Spacer()
+
+                switch status {
+                case .enabled:
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(isEnabled ? TerminalColors.green : Color.white.opacity(0.3))
+                            .frame(width: 6, height: 6)
+
+                        Toggle("", isOn: $isEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .scaleEffect(0.75)
+                            .onChange(of: isEnabled) { _, value in
+                                AppSettings.vibrationTapEnabled = value
+                                SensorServiceClient.shared.sendCurrentSensitivity()
+                            }
+                    }
+                case .requiresApproval:
+                    statusButton("Approve")
+                case .notRegistered, .notFound:
+                    statusButton("Enable")
+                @unknown default:
+                    statusButton("Retry")
+                }
+            }
+
+            if status == .enabled && isEnabled {
+                HStack(spacing: 8) {
+                    Text("Sensitivity")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.55))
+
+                    Slider(value: $sensitivityLevel, in: 0...1)
+                        .tint(.white.opacity(0.9))
+                        .onChange(of: sensitivityLevel) { _, value in
+                            AppSettings.vibrationSensitivityLevel = value
+                            SensorServiceClient.shared.sendCurrentSensitivity()
+                        }
+
+                    Text("High")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.65))
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isHovered ? Color.white.opacity(0.08) : Color.clear)
+        )
+        .onHover { isHovered = $0 }
+        .onAppear {
+            isEnabled = AppSettings.vibrationTapEnabled
+            sensitivityLevel = AppSettings.vibrationSensitivityLevel
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+        ) { _ in
+            isEnabled = AppSettings.vibrationTapEnabled
+            sensitivityLevel = AppSettings.vibrationSensitivityLevel
+        }
+    }
+
+    private var textColor: Color {
+        switch status {
+        case .requiresApproval:
+            return TerminalColors.amber
+        case .notRegistered, .notFound:
+            return .white.opacity(isHovered ? 1.0 : 0.7)
+        case .enabled:
+            return .white.opacity(isHovered ? 1.0 : 0.7)
+        @unknown default:
+            return Color(red: 1.0, green: 0.4, blue: 0.4)
+        }
+    }
+
+    @ViewBuilder
+    private func statusButton(_ title: String) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.black)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(Color.white)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
 }
 
 struct MenuRow: View {

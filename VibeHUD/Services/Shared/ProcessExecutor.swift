@@ -47,17 +47,17 @@ protocol ProcessExecuting: Sendable {
 }
 
 /// Default implementation using Foundation.Process
-actor ProcessExecutor: ProcessExecuting {
-    /// Shared instance (nonisolated(unsafe) required for actor init in static context)
-    nonisolated(unsafe) static let shared = ProcessExecutor()
+final class ProcessExecutor: ProcessExecuting, @unchecked Sendable {
+    /// Shared instance
+    nonisolated static let shared = ProcessExecutor()
 
     /// Logger for process execution (nonisolated static for cross-context access)
     nonisolated static let logger = Logger(subsystem: "com.vibehud", category: "ProcessExecutor")
 
-    private init() {}
+    nonisolated private init() {}
 
     /// Run a command asynchronously and return output (throws on failure)
-    func run(_ executable: String, arguments: [String]) async throws -> String {
+    nonisolated func run(_ executable: String, arguments: [String]) async throws -> String {
         let result = await runWithResult(executable, arguments: arguments)
         switch result {
         case .success(let processResult):
@@ -68,7 +68,7 @@ actor ProcessExecutor: ProcessExecuting {
     }
 
     /// Run a command asynchronously and return a full Result with exit code and stderr
-    func runWithResult(_ executable: String, arguments: [String]) async -> Result<ProcessResult, ProcessExecutorError> {
+    nonisolated func runWithResult(_ executable: String, arguments: [String]) async -> Result<ProcessResult, ProcessExecutorError> {
         await withCheckedContinuation { continuation in
             let process = Process()
             let stdoutPipe = Pipe()

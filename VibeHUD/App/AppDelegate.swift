@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import IOKit
 import Mixpanel
 import Sparkle
@@ -8,6 +9,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowManager: WindowManager?
     private var screenObserver: ScreenObserver?
     private var updateCheckTimer: Timer?
+    private var didInitializeMixpanel = false
 
     static var shared: AppDelegate?
     let updater: SPUUpdater
@@ -42,18 +44,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Mixpanel.initialize(token: "49814c1436104ed108f3fc4735228496")
+        didInitializeMixpanel = true
 
         let distinctId = getOrCreateDistinctId()
         Mixpanel.mainInstance().identify(distinctId: distinctId)
 
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let version =
+            Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
         let osVersion = Foundation.ProcessInfo.processInfo.operatingSystemVersionString
 
         Mixpanel.mainInstance().registerSuperProperties([
             "app_version": version,
             "build_number": build,
-            "macos_version": osVersion
+            "macos_version": osVersion,
         ])
 
         fetchAndRegisterClaudeVersion()
@@ -61,7 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Mixpanel.mainInstance().people.set(properties: [
             "app_version": version,
             "build_number": build,
-            "macos_version": osVersion
+            "macos_version": osVersion,
         ])
 
         Mixpanel.mainInstance().track(event: "App Launched")
@@ -81,7 +85,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             updater.checkForUpdates()
         }
 
-        updateCheckTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+        updateCheckTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) {
+            [weak self] _ in
             guard let updater = self?.updater, updater.canCheckForUpdates else { return }
             updater.checkForUpdates()
         }
@@ -92,7 +97,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        Mixpanel.mainInstance().flush()
+        if didInitializeMixpanel {
+            Mixpanel.mainInstance().flush()
+        }
         updateCheckTimer?.invalidate()
         screenObserver = nil
     }
@@ -128,25 +135,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func fetchAndRegisterClaudeVersion() {
         let claudeProjectsDir = ClaudePaths.projectsDir
 
-        guard let projectDirs = try? FileManager.default.contentsOfDirectory(
-            at: claudeProjectsDir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: .skipsHiddenFiles
-        ) else { return }
+        guard
+            let projectDirs = try? FileManager.default.contentsOfDirectory(
+                at: claudeProjectsDir,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: .skipsHiddenFiles
+            )
+        else { return }
 
         var latestFile: URL?
         var latestDate: Date?
 
         for projectDir in projectDirs {
-            guard let files = try? FileManager.default.contentsOfDirectory(
-                at: projectDir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: .skipsHiddenFiles
-            ) else { continue }
+            guard
+                let files = try? FileManager.default.contentsOfDirectory(
+                    at: projectDir,
+                    includingPropertiesForKeys: [.contentModificationDateKey],
+                    options: .skipsHiddenFiles
+                )
+            else { continue }
 
-            for file in files where file.pathExtension == "jsonl" && !file.lastPathComponent.hasPrefix("agent-") {
+            for file in files
+            where file.pathExtension == "jsonl" && !file.lastPathComponent.hasPrefix("agent-") {
                 if let attrs = try? file.resourceValues(forKeys: [.contentModificationDateKey]),
-                   let modDate = attrs.contentModificationDate {
+                    let modDate = attrs.contentModificationDate
+                {
                     if latestDate == nil || modDate > latestDate! {
                         latestDate = modDate
                         latestFile = file
@@ -156,7 +169,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard let jsonlFile = latestFile,
-              let handle = FileHandle(forReadingAtPath: jsonlFile.path) else { return }
+            let handle = FileHandle(forReadingAtPath: jsonlFile.path)
+        else { return }
         defer { try? handle.close() }
 
         let data = handle.readData(ofLength: 8192)
@@ -164,8 +178,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         for line in content.components(separatedBy: .newlines) where !line.isEmpty {
             guard let lineData = line.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  let version = json["version"] as? String else { continue }
+                let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                let version = json["version"] as? String
+            else { continue }
 
             Mixpanel.mainInstance().registerSuperProperties(["claude_code_version": version])
             Mixpanel.mainInstance().people.set(properties: ["claude_code_version": version])
@@ -174,15 +189,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func ensureSingleInstance() -> Bool {
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.farouqaldori.VibeHUD"
-        let runningApps = NSWorkspace.shared.runningApplications.filter {
-            $0.bundleIdentifier == bundleID
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.section9-lab.VibeHUD"
+        let otherInstance = NSWorkspace.shared.runningApplications.first {
+            $0.bundleIdentifier == bundleID && $0.processIdentifier != getpid()
         }
 
-        if runningApps.count > 1 {
-            if let existingApp = runningApps.first(where: { $0.processIdentifier != getpid() }) {
-                existingApp.activate()
-            }
+        if let existingApp = otherInstance {
+            existingApp.activate()
             return false
         }
 

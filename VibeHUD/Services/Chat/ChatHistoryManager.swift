@@ -133,13 +133,13 @@ struct ToolCallItem: Equatable, Sendable {
 
     /// Whether this tool is the subagent-container tool. "Task" is the
     /// legacy name; Claude Code now uses "Agent".
-    var isSubagentContainer: Bool {
+    nonisolated var isSubagentContainer: Bool {
         Self.isSubagentContainerName(name)
     }
 
     /// Same check by raw tool-name string (used when we don't have a
     /// ToolCallItem — e.g. when matching against `HookEvent.tool`).
-    static func isSubagentContainerName(_ name: String?) -> Bool {
+    nonisolated static func isSubagentContainerName(_ name: String?) -> Bool {
         name == "Task" || name == "Agent"
     }
 

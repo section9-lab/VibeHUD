@@ -7,16 +7,17 @@ VibeHUD Hook
 import json
 import os
 import socket
+import subprocess
 import sys
+import time
 
 SOCKET_PATH = "/tmp/vibe-hud.sock"
 TIMEOUT_SECONDS = 300  # 5 minutes for permission decisions
+TTY_BRIDGE_PROTOCOL = "v4"
 
 
 def get_tty():
     """Get the TTY of the Claude process (parent)"""
-    import subprocess
-
     # Get parent PID (Claude process)
     ppid = os.getppid()
 
@@ -49,6 +50,83 @@ def get_tty():
     return None
 
 
+def get_process_command(pid):
+    """Get process command name for a pid."""
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "comm="],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        cmd = result.stdout.strip()
+        return cmd if cmd else None
+    except Exception:
+        return None
+
+
+def find_terminal_pid(start_pid):
+    """Walk parent chain to find a known terminal process pid."""
+    known = [
+        "Terminal", "iTerm", "iTerm2", "Ghostty", "Warp",
+        "Alacritty", "kitty", "WezTerm", "Hyper", "Tabby"
+    ]
+
+    current = start_pid
+    for _ in range(20):
+        try:
+            result = subprocess.run(
+                ["ps", "-p", str(current), "-o", "ppid=,comm="],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            line = result.stdout.strip()
+            if not line:
+                return None
+            parts = line.split(None, 1)
+            if len(parts) < 2:
+                return None
+            ppid = int(parts[0])
+            comm = parts[1]
+
+            if any(name.lower() in comm.lower() for name in known):
+                return current
+
+            if ppid <= 1:
+                return None
+            current = ppid
+        except Exception:
+            return None
+
+    return None
+
+
+def map_bundle_id(command):
+    """Best-effort mapping from process command to terminal bundle ID."""
+    if not command:
+        return None
+
+    c = command.lower()
+    if "iterm" in c:
+        return "com.googlecode.iterm2"
+    if c.endswith("/terminal") or c == "terminal":
+        return "com.apple.Terminal"
+    if "ghostty" in c:
+        return "com.mitchellh.ghostty"
+    if "warp" in c:
+        return "dev.warp.Warp-Stable"
+    if "wezterm" in c:
+        return "com.github.wez.wezterm"
+    if "alacritty" in c:
+        return "io.alacritty"
+    if "kitty" in c:
+        return "net.kovidgoyal.kitty"
+    if "hyper" in c:
+        return "co.zeit.hyper"
+    return None
+
+
 def send_event(state):
     """Send event to app, return response if any"""
     try:
@@ -71,6 +149,61 @@ def send_event(state):
         return None
 
 
+def bridge_socket_path(session_id):
+    safe = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in (session_id or "unknown"))
+    return f"/tmp/vibe-hud-tty-{TTY_BRIDGE_PROTOCOL}-{safe}.sock"
+
+
+def is_bridge_alive(socket_path):
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(0.25)
+        sock.connect(socket_path)
+        sock.sendall(json.dumps({"ping": True}).encode())
+        response = sock.recv(32)
+        sock.close()
+        return response.strip() == f"ok-{TTY_BRIDGE_PROTOCOL}".encode()
+    except Exception:
+        return False
+
+
+def ensure_tty_bridge(session_id, tty):
+    """Ensure per-session tty bridge is running and return socket path."""
+    existing = os.environ.get("VIBE_HUD_INPUT_SOCKET")
+    if existing:
+        return existing
+
+    if not tty:
+        return None
+
+    socket_path = bridge_socket_path(session_id)
+    if os.path.exists(socket_path) and is_bridge_alive(socket_path):
+        return socket_path
+
+    script_path = os.path.join(os.path.dirname(__file__), "vibe-hud-tty-bridge.py")
+    if not os.path.exists(script_path):
+        return None
+
+    python_exec = sys.executable or "python3"
+    try:
+        subprocess.Popen(
+            [python_exec, script_path, "--socket", socket_path, "--tty", tty],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            close_fds=True,
+        )
+    except Exception:
+        return None
+
+    for _ in range(8):
+        if os.path.exists(socket_path) and is_bridge_alive(socket_path):
+            return socket_path
+        time.sleep(0.03)
+
+    return None
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -85,6 +218,14 @@ def main():
     # Get process info
     claude_pid = os.getppid()
     tty = get_tty()
+    terminal_pid = find_terminal_pid(claude_pid)
+    terminal_cmd = get_process_command(terminal_pid) if terminal_pid else None
+    terminal_bundle_id = map_bundle_id(terminal_cmd)
+
+    tmux_env = os.environ.get("TMUX", "")
+    tmux_socket = tmux_env.split(",")[0] if tmux_env else None
+
+    input_socket = ensure_tty_bridge(session_id, tty)
 
     # Build state object
     state = {
@@ -93,6 +234,11 @@ def main():
         "event": event,
         "pid": claude_pid,
         "tty": tty,
+        "input_socket": input_socket,
+        "terminal_pid": terminal_pid,
+        "terminal_bundle_id": terminal_bundle_id,
+        "tmux_pane": os.environ.get("TMUX_PANE"),
+        "tmux_socket": tmux_socket,
     }
 
     # Map events to status

@@ -8,8 +8,8 @@
     <a href="https://github.com/section9-lab/VibeHUD/releases/latest" target="_blank" rel="noopener noreferrer">
       <img src="https://img.shields.io/github/v/release/section9-lab/VibeHUD?style=rounded&color=white&labelColor=000000&label=release" alt="Release Version" />
     </a>
-    <a href="#" target="_blank" rel="noopener noreferrer">
-      <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/farouqaldori/vibe-hud/total?style=rounded&color=white&labelColor=000000">
+    <a href="https://github.com/section9-lab/VibeHUD/releases/download/v1.3.1/VibeHUD-1.3.1.dmg" target="_blank" rel="noopener noreferrer">
+      <img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/section9-lab/vibe-hud/total?style=rounded&color=white&labelColor=000000">
     </a>
   </p>
 </div>

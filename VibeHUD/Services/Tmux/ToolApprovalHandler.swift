@@ -44,21 +44,33 @@ actor ToolApprovalHandler {
     }
 
     /// Send a message to a tmux target
-    func sendMessage(_ message: String, to target: TmuxTarget) async -> Bool {
-        await sendKeys(to: target, keys: message, pressEnter: true)
+    func sendMessage(_ message: String, to target: TmuxTarget, tmuxSocketPath: String? = nil) async -> Bool {
+        await sendKeys(toTargetString: target.targetString, keys: message, pressEnter: true, tmuxSocketPath: tmuxSocketPath)
+    }
+
+    /// Send a message to a raw tmux target string (e.g. "%12" or "session:window.pane")
+    func sendMessage(_ message: String, toTargetString target: String, tmuxSocketPath: String? = nil) async -> Bool {
+        await sendKeys(toTargetString: target, keys: message, pressEnter: true, tmuxSocketPath: tmuxSocketPath)
     }
 
     // MARK: - Private Methods
 
-    private func sendKeys(to target: TmuxTarget, keys: String, pressEnter: Bool) async -> Bool {
+    private func sendKeys(to target: TmuxTarget, keys: String, pressEnter: Bool, tmuxSocketPath: String? = nil) async -> Bool {
+        await sendKeys(toTargetString: target.targetString, keys: keys, pressEnter: pressEnter, tmuxSocketPath: tmuxSocketPath)
+    }
+
+    private func sendKeys(toTargetString targetStr: String, keys: String, pressEnter: Bool, tmuxSocketPath: String? = nil) async -> Bool {
         guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
             return false
         }
 
         // tmux send-keys needs literal text and Enter as separate arguments
         // Use -l flag to send keys literally (prevents interpreting special chars)
-        let targetStr = target.targetString
-        let textArgs = ["send-keys", "-t", targetStr, "-l", keys]
+        var prefixArgs: [String] = []
+        if let tmuxSocketPath, !tmuxSocketPath.isEmpty {
+            prefixArgs = ["-S", tmuxSocketPath]
+        }
+        let textArgs = prefixArgs + ["send-keys", "-t", targetStr, "-l", keys]
 
         do {
             Self.logger.debug("Sending text to \(targetStr, privacy: .public)")
@@ -67,7 +79,7 @@ actor ToolApprovalHandler {
             // Send Enter as a separate command if needed
             if pressEnter {
                 Self.logger.debug("Sending Enter key")
-                let enterArgs = ["send-keys", "-t", targetStr, "Enter"]
+                let enterArgs = prefixArgs + ["send-keys", "-t", targetStr, "Enter"]
                 _ = try await ProcessExecutor.shared.run(tmuxPath, arguments: enterArgs)
             }
             return true

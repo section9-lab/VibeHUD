@@ -1,6 +1,15 @@
 {
-  "originHash" : "59c492bd06c524f73f70d11ac7424433a1d0afb3db6e9e9de59509edfac23cef",
+  "originHash" : "d50e48776b766a0c9dedef680638a08f6989c786ed6d4ce3819d95e5c0e0d55a",
   "pins" : [
+    {
+      "identity" : "applespuaccelerometer",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/section9-lab/AppleSPUAccelerometer",
+      "state" : {
+        "branch" : "main",
+        "revision" : "312acfff942439e2369a63ada75397624e20bd73"
+      }
+    },
     {
       "identity" : "json-logic-swift",
       "kind" : "remoteSourceControl",

@@ -21,6 +21,11 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     var pid: Int?
     var tty: String?
+    var inputSocketPath: String?
+    var terminalBundleId: String?
+    var terminalPid: Int?
+    var tmuxPane: String?
+    var tmuxSocketPath: String?
     var isInTmux: Bool
 
     // MARK: - State Machine
@@ -70,6 +75,11 @@ struct SessionState: Equatable, Identifiable, Sendable {
         projectName: String? = nil,
         pid: Int? = nil,
         tty: String? = nil,
+        inputSocketPath: String? = nil,
+        terminalBundleId: String? = nil,
+        terminalPid: Int? = nil,
+        tmuxPane: String? = nil,
+        tmuxSocketPath: String? = nil,
         isInTmux: Bool = false,
         phase: SessionPhase = .idle,
         chatItems: [ChatHistoryItem] = [],
@@ -88,6 +98,11 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.projectName = projectName ?? URL(fileURLWithPath: cwd).lastPathComponent
         self.pid = pid
         self.tty = tty
+        self.inputSocketPath = inputSocketPath
+        self.terminalBundleId = terminalBundleId
+        self.terminalPid = terminalPid
+        self.tmuxPane = tmuxPane
+        self.tmuxSocketPath = tmuxSocketPath
         self.isInTmux = isInTmux
         self.phase = phase
         self.chatItems = chatItems

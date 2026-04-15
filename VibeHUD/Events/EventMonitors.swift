@@ -6,7 +6,6 @@
 //
 
 import AppKit
-import AppleSPUAccelerometer
 import Combine
 
 class EventMonitors {
@@ -15,17 +14,21 @@ class EventMonitors {
     let mouseLocation = CurrentValueSubject<CGPoint, Never>(.zero)
     let mouseDown = PassthroughSubject<NSEvent, Never>()
 
+    /// Fires when the accelerometer detects a single tap on the MacBook surface.
+    let singleTap = PassthroughSubject<Date, Never>()
+
     /// Fires when the accelerometer detects a double-tap on the MacBook surface.
     let doubleTap = PassthroughSubject<Date, Never>()
 
     private var mouseMoveMonitor: EventMonitor?
     private var mouseDownMonitor: EventMonitor?
     private var mouseDraggedMonitor: EventMonitor?
-    private var accelerometer: SPUAccelerometer?
+    private let sensorClient = SensorServiceClient.shared
+    private var cancellables = Set<AnyCancellable>()
 
     private init() {
         setupMonitors()
-        setupAccelerometer()
+        setupSensorBridge()
     }
 
     private func setupMonitors() {
@@ -45,28 +48,33 @@ class EventMonitors {
         mouseDraggedMonitor?.start()
     }
 
-    private func setupAccelerometer() {
-        let accel = SPUAccelerometer()
-        accel.trackTaps = true
+    private func setupSensorBridge() {
+        sensorClient.onSingleTap = { [weak self] amplitude in
+            guard AppSettings.vibrationTapEnabled else { return }
+            guard amplitude >= AppSettings.vibrationTapMinAmplitude else { return }
+            self?.singleTap.send(Date())
+        }
 
-        accel.onTap = { [weak self] kind, _ in
-            if kind == .double {
-                self?.doubleTap.send(Date())
+        sensorClient.onDoubleTap = { [weak self] amplitude in
+            guard AppSettings.vibrationTapEnabled else { return }
+            guard amplitude >= AppSettings.vibrationTapMinAmplitude else { return }
+            self?.doubleTap.send(Date())
+        }
+
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { _ in
+                SensorServiceClient.shared.sendCurrentSensitivity()
             }
-        }
+            .store(in: &cancellables)
 
-        do {
-            try accel.start()
-            accelerometer = accel
-        } catch {
-            print("[EventMonitors] Accelerometer unavailable: \(error)")
-        }
+        sensorClient.start()
     }
 
     deinit {
         mouseMoveMonitor?.stop()
         mouseDownMonitor?.stop()
         mouseDraggedMonitor?.stop()
-        accelerometer?.stop()
+        sensorClient.stop()
     }
 }

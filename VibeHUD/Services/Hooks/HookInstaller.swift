@@ -13,20 +13,32 @@ struct HookInstaller {
     static func installIfNeeded() {
         let hooksDir = ClaudePaths.hooksDir
         let pythonScript = hooksDir.appendingPathComponent("vibe-hud-state.py")
+        let bridgeScript = ClaudePaths.bridgeScriptPath
+        let ttyBridgeScript = hooksDir.appendingPathComponent("vibe-hud-tty-bridge.py")
+        let bridgeLauncher = ClaudePaths.bridgeLauncherPath
 
         try? FileManager.default.createDirectory(
             at: hooksDir,
             withIntermediateDirectories: true
         )
+        try? FileManager.default.createDirectory(
+            at: ClaudePaths.binDir,
+            withIntermediateDirectories: true
+        )
 
-        if let bundled = Bundle.main.url(forResource: "vibe-hud-state", withExtension: "py") {
-            try? FileManager.default.removeItem(at: pythonScript)
-            try? FileManager.default.copyItem(at: bundled, to: pythonScript)
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: 0o755],
-                ofItemAtPath: pythonScript.path
-            )
-        }
+        installScript(resource: "vibe-hud-state", to: pythonScript)
+        installScript(resource: "vibe-hud-bridge", to: bridgeScript)
+        installScript(resource: "vibe-hud-tty-bridge", to: ttyBridgeScript)
+
+        let launcher = """
+        #!/bin/sh
+        exec \(detectPython()) \(ClaudePaths.bridgeScriptShellPath) "$@"
+        """
+        try? launcher.write(to: bridgeLauncher, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: bridgeLauncher.path
+        )
 
         updateSettings(at: ClaudePaths.settingsFile)
     }
@@ -125,9 +137,15 @@ struct HookInstaller {
     static func uninstall() {
         let hooksDir = ClaudePaths.hooksDir
         let pythonScript = hooksDir.appendingPathComponent("vibe-hud-state.py")
+        let bridgeScript = ClaudePaths.bridgeScriptPath
+        let ttyBridgeScript = hooksDir.appendingPathComponent("vibe-hud-tty-bridge.py")
+        let bridgeLauncher = ClaudePaths.bridgeLauncherPath
         let settings = ClaudePaths.settingsFile
 
         try? FileManager.default.removeItem(at: pythonScript)
+        try? FileManager.default.removeItem(at: bridgeScript)
+        try? FileManager.default.removeItem(at: ttyBridgeScript)
+        try? FileManager.default.removeItem(at: bridgeLauncher)
 
         guard let data = try? Data(contentsOf: settings),
               var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -159,6 +177,13 @@ struct HookInstaller {
         ) {
             try? data.write(to: settings)
         }
+    }
+
+    private static func installScript(resource: String, to destination: URL) {
+        guard let bundled = Bundle.main.url(forResource: resource, withExtension: "py") else { return }
+        try? FileManager.default.removeItem(at: destination)
+        try? FileManager.default.copyItem(at: bundled, to: destination)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
     }
 
     private static func detectPython() -> String {

@@ -500,43 +500,10 @@ struct ChatView: View {
     }
 
     private func sendToSession(_ text: String) async {
-        guard let tty = session.tty else { return }
-
-        if session.isInTmux, let target = await findTmuxTarget(tty: tty) {
-            _ = await ToolApprovalHandler.shared.sendMessage(text, to: target)
-        } else if let pid = session.pid {
-            _ = await TtyMessageSender(pid: pid).sendMessage(text)
+        let sent = await sessionMonitor.sendInteractiveAnswer(sessionId: session.sessionId, text: text)
+        if !sent {
+            print("[ChatView] Failed to send interactive answer for session \(session.sessionId)")
         }
-    }
-
-    private func findTmuxTarget(tty: String) async -> TmuxTarget? {
-        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
-            return nil
-        }
-
-        do {
-            let output = try await ProcessExecutor.shared.run(
-                tmuxPath,
-                arguments: ["list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index} #{pane_tty}"]
-            )
-
-            let lines = output.components(separatedBy: "\n")
-            for line in lines {
-                let parts = line.components(separatedBy: " ")
-                guard parts.count >= 2 else { continue }
-
-                let target = parts[0]
-                let paneTty = parts[1].replacingOccurrences(of: "/dev/", with: "")
-
-                if paneTty == tty {
-                    return TmuxTarget(from: target)
-                }
-            }
-        } catch {
-            return nil
-        }
-
-        return nil
     }
 }
 

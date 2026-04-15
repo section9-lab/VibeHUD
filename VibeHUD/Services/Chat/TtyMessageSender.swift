@@ -11,11 +11,28 @@ import Foundation
 
 struct TtyMessageSender {
     let pid: Int  // Claude process PID
+    let terminalPidHint: Int?
+
+    init(pid: Int, terminalPidHint: Int? = nil) {
+        self.pid = pid
+        self.terminalPidHint = terminalPidHint
+    }
 
     func sendMessage(_ message: String) async -> Bool {
-        // Walk up the process tree to find the parent terminal app PID
-        let tree = ProcessTreeBuilder.shared.buildTree()
-        guard let terminalPid = ProcessTreeBuilder.shared.findTerminalPid(forProcess: pid, tree: tree) else {
+        // Prefer terminal PID from hook metadata (more reliable for Ghostty/Warp),
+        // then fall back to process-tree lookup from Claude PID.
+        let terminalPid: Int
+        if let hinted = terminalPidHint {
+            terminalPid = hinted
+        } else {
+            let tree = ProcessTreeBuilder.shared.buildTree()
+            guard let resolved = ProcessTreeBuilder.shared.findTerminalPid(forProcess: pid, tree: tree) else {
+                return false
+            }
+            terminalPid = resolved
+        }
+
+        guard terminalPid > 1 else {
             return false
         }
 
