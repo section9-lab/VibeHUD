@@ -119,10 +119,6 @@ def run_server(socket_path, tty_path, idle_timeout):
                 if not isinstance(submit, bool):
                     submit = True
 
-                if not os.path.exists(tty_path):
-                    client.sendall(b"error")
-                    continue
-
                 write_to_tty(tty_path, text, submit, submit_sequence)
                 client.sendall(b"ok")
                 last_activity = time.time()

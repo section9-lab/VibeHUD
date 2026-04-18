@@ -11,7 +11,6 @@ import CoreGraphics
 
 struct BridgeReplyTransport: ReplyTransport {
     let id = "bridge"
-    private let ghosttyBundleId = "com.mitchellh.ghostty"
 
     func canHandle(_ context: ReplyContext) -> Bool {
         guard let socket = context.inputSocketPath else { return false }
@@ -20,7 +19,7 @@ struct BridgeReplyTransport: ReplyTransport {
 
     func send(_ payload: ReplyPayload, context: ReplyContext) async -> Bool {
         guard let socket = context.inputSocketPath else { return false }
-        let isGhostty = context.terminalBundleId == ghosttyBundleId
+        let isGhostty = context.terminalBundleId == TerminalAppRegistry.ghosttyBundleId
         let textSent = await ClaudeInputBridgeClient.shared.sendMessage(
             payload.text,
             toSocketPath: socket,
@@ -70,7 +69,7 @@ struct BridgeReplyTransport: ReplyTransport {
         if let terminalPid = context.terminalPid {
             return pid_t(terminalPid)
         }
-        return NSRunningApplication.runningApplications(withBundleIdentifier: ghosttyBundleId).first?.processIdentifier
+        return NSRunningApplication.runningApplications(withBundleIdentifier: TerminalAppRegistry.ghosttyBundleId).first?.processIdentifier
     }
 
     private func postReturnToPid(_ pid: pid_t) -> Bool {

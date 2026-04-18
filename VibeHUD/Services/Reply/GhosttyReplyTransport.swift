@@ -12,11 +12,10 @@ import Foundation
 
 struct GhosttyReplyTransport: ReplyTransport {
     let id = "ghostty"
-    private let ghosttyBundleId = "com.mitchellh.ghostty"
 
     func canHandle(_ context: ReplyContext) -> Bool {
-        context.terminalBundleId == ghosttyBundleId ||
-        !NSRunningApplication.runningApplications(withBundleIdentifier: ghosttyBundleId).isEmpty
+        context.terminalBundleId == TerminalAppRegistry.ghosttyBundleId ||
+        !NSRunningApplication.runningApplications(withBundleIdentifier: TerminalAppRegistry.ghosttyBundleId).isEmpty
     }
 
     func send(_ payload: ReplyPayload, context: ReplyContext) async -> Bool {
@@ -42,11 +41,11 @@ struct GhosttyReplyTransport: ReplyTransport {
     private func resolveGhosttyApp(context: ReplyContext) -> NSRunningApplication? {
         if let terminalPid = context.terminalPid,
            let app = NSRunningApplication(processIdentifier: pid_t(terminalPid)),
-           app.bundleIdentifier == ghosttyBundleId {
+           app.bundleIdentifier == TerminalAppRegistry.ghosttyBundleId {
             return app
         }
 
-        let running = NSRunningApplication.runningApplications(withBundleIdentifier: ghosttyBundleId)
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: TerminalAppRegistry.ghosttyBundleId)
         if running.count == 1 {
             return running[0]
         }

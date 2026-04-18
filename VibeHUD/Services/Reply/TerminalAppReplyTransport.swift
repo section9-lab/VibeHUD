@@ -11,7 +11,7 @@ struct TerminalAppReplyTransport: ReplyTransport {
     let id = "terminal-app"
 
     func canHandle(_ context: ReplyContext) -> Bool {
-        context.terminalBundleId == "com.apple.Terminal" && context.tty != nil
+        context.terminalBundleId == TerminalAppRegistry.terminalAppBundleId && context.tty != nil
     }
 
     func send(_ payload: ReplyPayload, context: ReplyContext) async -> Bool {

@@ -34,6 +34,11 @@ struct TerminalAppRegistry: Sendable {
         "zed"
     ]
 
+    // Named constants for transports that target a specific app
+    nonisolated static let terminalAppBundleId = "com.apple.Terminal"
+    nonisolated static let iTerm2BundleId = "com.googlecode.iterm2"
+    nonisolated static let ghosttyBundleId = "com.mitchellh.ghostty"
+
     /// Bundle identifiers for terminal apps (for window enumeration)
     nonisolated static let bundleIdentifiers: Set<String> = [
         "com.apple.Terminal",

@@ -15,5 +15,9 @@
         <key>com.section9-lab.VibeHUD.SensorHelper</key>
         <true/>
     </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/vibehud-sensor-helper.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/vibehud-sensor-helper.err.log</string>
 </dict>
 </plist>

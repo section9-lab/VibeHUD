@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import ServiceManagement
 
@@ -106,7 +107,9 @@ final class SensorPrivilegedHelperManager {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
         let bundlePath = Bundle.main.bundleURL.resolvingSymlinksInPath().path
-        return "\(version)-\(build)|\(bundlePath)|\(helperLabel)|\(daemonPlistName)"
+        let helperSignature = fileSignature(at: bundledHelperURL)
+        let plistSignature = fileSignature(at: bundledDaemonPlistURL)
+        return "\(version)-\(build)|\(bundlePath)|\(helperLabel)|\(daemonPlistName)|\(helperSignature)|\(plistSignature)"
     }
 
     private var shouldRefreshRegistration: Bool {
@@ -116,6 +119,13 @@ final class SensorPrivilegedHelperManager {
 
     private func persistRegisteredFingerprint() {
         UserDefaults.standard.set(currentRegistrationFingerprint, forKey: registrationFingerprintKey)
+    }
+
+    private func fileSignature(at url: URL?) -> String {
+        guard let url else { return "missing" }
+        guard let data = try? Data(contentsOf: url) else { return "unreadable" }
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     private func clearPersistedRegistrationState() {
@@ -151,9 +161,20 @@ final class SensorPrivilegedHelperManager {
         }
 
         if shouldRefreshRegistration {
-            print("[SensorHelperManager] Helper registration fingerprint changed; refreshing daemon registration")
-            unregisterDaemonIfNeeded()
-            clearPersistedRegistrationState()
+            switch daemonService.status {
+            case .enabled, .requiresApproval:
+                // Keep the current registration alive on startup. Tearing it down before a
+                // successful re-register leaves the app with no helper at all.
+                print("[SensorHelperManager] Helper registration fingerprint changed; keeping existing daemon registration")
+            case .notRegistered, .notFound:
+                print("[SensorHelperManager] Helper registration fingerprint changed; refreshing daemon registration")
+                unregisterDaemonIfNeeded()
+                clearPersistedRegistrationState()
+            @unknown default:
+                print("[SensorHelperManager] Helper registration fingerprint changed; refreshing daemon registration")
+                unregisterDaemonIfNeeded()
+                clearPersistedRegistrationState()
+            }
         }
     }
 

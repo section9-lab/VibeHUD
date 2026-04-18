@@ -17,7 +17,7 @@ enum ClaudePaths {
     /// Guards reads/writes to _cachedDir — accessed from the main actor
     /// (UI settings), the ConversationParser actor, and background watcher
     /// queues, so cross-thread access needs synchronization.
-    nonisolated(unsafe) private static let cacheLock = NSLock()
+    nonisolated private static let cacheLock = NSLock()
 
     /// Root Claude config directory, resolved once and cached.
     ///

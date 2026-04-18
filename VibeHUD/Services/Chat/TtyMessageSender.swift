@@ -36,10 +36,7 @@ struct TtyMessageSender {
             return false
         }
 
-        // Escape the message for AppleScript string literal
-        let escaped = message
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+        let escaped = AppleScriptEscape.escape(message)
 
         // Use System Events to keystroke into the terminal process
         // This requires Accessibility permission (already requested by VibeHUD)

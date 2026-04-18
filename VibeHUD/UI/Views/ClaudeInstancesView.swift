@@ -177,7 +177,11 @@ struct ClaudeInstancesView: View {
     }
 
     private func handleSingleTap() {
-        guard let target = tapControlledSession() else { return }
+        guard let target = tapControlledSession() else {
+            print("[TapControl] single tap ignored: no waiting-for-approval target")
+            return
+        }
+        print("[TapControl] single tap target session=\(target.sessionId) tool=\(target.pendingToolName ?? "none")")
         if target.pendingToolName == "AskUserQuestion" {
             advanceAskFocus(session: target)
             return
@@ -186,7 +190,11 @@ struct ClaudeInstancesView: View {
     }
 
     private func handleDoubleTap() {
-        guard let target = tapControlledSession() else { return }
+        guard let target = tapControlledSession() else {
+            print("[TapControl] double tap ignored: no waiting-for-approval target")
+            return
+        }
+        print("[TapControl] double tap target session=\(target.sessionId) tool=\(target.pendingToolName ?? "none")")
         if target.pendingToolName == "AskUserQuestion" {
             commitAskFocusedAction(session: target)
             return
@@ -246,6 +254,7 @@ struct ClaudeInstancesView: View {
         guard !targets.isEmpty else { return }
         let current = min(askFocusIndexByKey[key] ?? 0, targets.count - 1)
         askFocusIndexByKey[key] = (current + 1) % targets.count
+        print("[TapControl] advanced AskUserQuestion focus session=\(session.sessionId) from=\(current) to=\(askFocusIndexByKey[key] ?? 0)")
     }
 
     private func commitAskFocusedAction(session: SessionState) {
@@ -255,6 +264,7 @@ struct ClaudeInstancesView: View {
         guard !targets.isEmpty else { return }
         let index = min(askFocusIndexByKey[key] ?? 0, targets.count - 1)
         let target = targets[index]
+        print("[TapControl] commit AskUserQuestion focused action session=\(session.sessionId) index=\(index)")
         switch target {
         case .option(let qIdx, let option):
             handleAskOptionTap(session: session, questionIndex: qIdx, option: option)

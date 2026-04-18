@@ -49,8 +49,9 @@ enum AppSettings {
     static var notificationSound: NotificationSound {
         get {
             guard let rawValue = defaults.string(forKey: Keys.notificationSound),
-                  let sound = NotificationSound(rawValue: rawValue) else {
-                return .pop // Default to Pop
+                let sound = NotificationSound(rawValue: rawValue)
+            else {
+                return .pop  // Default to Pop
             }
             return sound
         }
@@ -70,7 +71,8 @@ enum AppSettings {
             return value.isEmpty ? ".claude" : value
         }
         set {
-            defaults.set(newValue.trimmingCharacters(in: .whitespaces), forKey: Keys.claudeDirectoryName)
+            defaults.set(
+                newValue.trimmingCharacters(in: .whitespaces), forKey: Keys.claudeDirectoryName)
         }
     }
 
@@ -89,11 +91,11 @@ enum AppSettings {
         }
     }
 
-    /// Minimum tap amplitude required to emit tap events.
+    /// Minimum vibration amplitude required to emit a debounced vibration trigger.
     static var vibrationTapMinAmplitude: Double {
         get {
             guard defaults.object(forKey: Keys.vibrationTapMinAmplitude) != nil else {
-                return 0.005
+                return 0.0012
             }
             return clampTapAmplitude(defaults.double(forKey: Keys.vibrationTapMinAmplitude))
         }
@@ -102,8 +104,8 @@ enum AppSettings {
         }
     }
 
-    /// Lower amplitude means more sensitive.
-    static let vibrationTapMinAmplitudeLowerBound: Double = 0.0015
+    /// Lower amplitude means more sensitive. Desk vibrations often land below 0.001g.
+    static let vibrationTapMinAmplitudeLowerBound: Double = 0.0002
     static let vibrationTapMinAmplitudeUpperBound: Double = 0.03
 
     /// 0.0 = least sensitive, 1.0 = most sensitive.

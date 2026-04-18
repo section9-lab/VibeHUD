@@ -7,9 +7,9 @@ final class SensorServiceClient: NSObject {
 
     var onSingleTap: ((Double) -> Void)?
     var onDoubleTap: ((Double) -> Void)?
+    var onVibrationTrigger: ((Double) -> Void)?
 
     private var helperConnection: NSXPCConnection?
-    private var callbackListener: NSXPCListener?
     private var isRunning = false
     private var didAttemptRegistration = false
 
@@ -20,7 +20,8 @@ final class SensorServiceClient: NSObject {
     func start() {
         guard !isRunning else { return }
         isRunning = true
-        setupCallbackListener()
+        print("[SensorServiceClient] start")
+        tryRegisterHelperOnce()
         connectToHelper()
         checkHelperHealth()
         sendCurrentSensitivity()
@@ -29,23 +30,15 @@ final class SensorServiceClient: NSObject {
 
     func stop() {
         helperProxy()?.stopMonitoring()
-        callbackListener?.invalidate()
-        callbackListener = nil
         helperConnection?.invalidate()
         helperConnection = nil
         isRunning = false
     }
 
     func sendCurrentSensitivity() {
+        print("[SensorServiceClient] sendCurrentSensitivity enabled=\(AppSettings.vibrationTapEnabled) minAmplitude=\(AppSettings.vibrationTapMinAmplitude)")
         helperProxy()?.setEnabled(AppSettings.vibrationTapEnabled)
         helperProxy()?.setSensitivity(AppSettings.vibrationTapMinAmplitude)
-    }
-
-    private func setupCallbackListener() {
-        let listener = NSXPCListener.anonymous()
-        listener.delegate = self
-        listener.resume()
-        callbackListener = listener
     }
 
     private func connectToHelper() {
@@ -54,6 +47,8 @@ final class SensorServiceClient: NSObject {
             options: .privileged
         )
         connection.remoteObjectInterface = NSXPCInterface(with: SensorHelperXPCProtocol.self)
+        connection.exportedInterface = NSXPCInterface(with: SensorHelperClientXPCProtocol.self)
+        connection.exportedObject = self
         connection.invalidationHandler = { [weak self] in
             self?.helperConnection = nil
         }
@@ -62,10 +57,6 @@ final class SensorServiceClient: NSObject {
         }
         connection.resume()
         helperConnection = connection
-
-        if let endpoint = callbackListener?.endpoint {
-            helperProxy()?.setClientEndpoint(endpoint)
-        }
     }
 
     private func helperProxy() -> SensorHelperXPCProtocol? {
@@ -103,20 +94,20 @@ final class SensorServiceClient: NSObject {
     }
 }
 
-extension SensorServiceClient: NSXPCListenerDelegate, SensorHelperClientXPCProtocol {
-    func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
-        newConnection.exportedInterface = NSXPCInterface(with: SensorHelperClientXPCProtocol.self)
-        newConnection.exportedObject = self
-        newConnection.resume()
-        return true
-    }
-
+extension SensorServiceClient: SensorHelperClientXPCProtocol {
     func didReceiveSingleTap(_ amplitude: Double) {
+        print("[SensorServiceClient] received single tap amp=\(String(format: "%.4f", amplitude))")
         onSingleTap?(amplitude)
     }
 
     func didReceiveDoubleTap(_ amplitude: Double) {
+        print("[SensorServiceClient] received double tap amp=\(String(format: "%.4f", amplitude))")
         onDoubleTap?(amplitude)
+    }
+
+    func didReceiveVibrationTrigger(_ amplitude: Double) {
+        print("[SensorServiceClient] received vibration trigger amp=\(String(format: "%.4f", amplitude))")
+        onVibrationTrigger?(amplitude)
     }
 
     func helperDidFail(_ message: String) {

@@ -11,7 +11,7 @@ struct ITerm2ReplyTransport: ReplyTransport {
     let id = "iterm2"
 
     func canHandle(_ context: ReplyContext) -> Bool {
-        context.terminalBundleId == "com.googlecode.iterm2" && context.tty != nil
+        context.terminalBundleId == TerminalAppRegistry.iTerm2BundleId && context.tty != nil
     }
 
     func send(_ payload: ReplyPayload, context: ReplyContext) async -> Bool {

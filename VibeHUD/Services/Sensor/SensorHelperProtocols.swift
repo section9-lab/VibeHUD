@@ -12,5 +12,6 @@ import Foundation
 @objc protocol SensorHelperClientXPCProtocol {
     func didReceiveSingleTap(_ amplitude: Double)
     func didReceiveDoubleTap(_ amplitude: Double)
+    func didReceiveVibrationTrigger(_ amplitude: Double)
     func helperDidFail(_ message: String)
 }
