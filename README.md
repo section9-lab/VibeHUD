@@ -12,7 +12,7 @@
       <img src="https://img.shields.io/github/downloads/section9-lab/VibeHUD/total?style=rounded&color=white&labelColor=000000" alt="Downloads" />
     </a>
     <a href="https://github.com/section9-lab/VibeHUD/releases/latest">
-      <img src="https://img.shields.io/github/release-size/section9-lab/VibeHUD?style=rounded&color=white&labelColor=000000&label=DMG%20size" alt="Latest release size" />
+      <img src="https://img.shields.io/github/repo-size/section9-lab/VibeHUD?style=rounded&color=white&labelColor=000000&label=DMG%20size" alt="Latest release size" />
     </a>
   </p>
 </div>
