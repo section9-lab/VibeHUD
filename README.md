@@ -2,6 +2,10 @@
   <img src="VibeHUD/AppIcon.icon/vibe-hud.png" alt="VibeHUD icon" width="120" height="120">
   <h1 align="center">VibeHUD</h1>
 
+  <p align="center">
+    A macOS notch overlay for Claude Code that keeps your sessions, approvals, replies, and updates within reach.
+  </p>
+  
 [![Release Version](https://img.shields.io/github/v/release/section9-lab/VibeHUD?style=rounded&color=white&labelColor=000000)](https://github.com/section9-lab/VibeHUD/releases/latest)
 [![GitHub license](https://img.shields.io/github/license/section9-lab/VibeHUD?style=rounded&color=white&labelColor=000000)](LICENSE)
 [![GitHub Star](https://img.shields.io/github/stars/section9-lab/VibeHUD?style=rounded&color=white&labelColor=000000)](https://github.com/section9-lab/VibeHUD/stargazers)
