@@ -29,7 +29,7 @@ struct ChatMessage: Identifiable, Equatable {
     }
 
     /// Plain text content combined
-    var textContent: String {
+    nonisolated var textContent: String {
         content.compactMap { block in
             if case .text(let text) = block {
                 return text

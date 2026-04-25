@@ -163,3 +163,45 @@ enum CodexPaths {
         "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
+
+enum OpenCodePaths {
+    nonisolated static var configDir: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/opencode")
+    }
+
+    nonisolated static var configFile: URL {
+        configDir.appendingPathComponent("opencode.json")
+    }
+
+    nonisolated static var pluginDir: URL {
+        configDir.appendingPathComponent("plugin")
+    }
+
+    nonisolated static var pluginFile: URL {
+        pluginDir.appendingPathComponent("vibe-hud.js")
+    }
+
+    nonisolated static var pluginFileURLString: String {
+        pluginFile.absoluteURL.absoluteString
+    }
+
+    nonisolated static var dataDir: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share/opencode")
+    }
+
+    nonisolated static var storageDir: URL {
+        dataDir.appendingPathComponent("storage")
+    }
+
+    nonisolated static var sessionsDir: URL {
+        storageDir.appendingPathComponent("session")
+    }
+
+    nonisolated static var messagesDir: URL {
+        storageDir.appendingPathComponent("message")
+    }
+
+    nonisolated static var partsDir: URL {
+        storageDir.appendingPathComponent("part")
+    }
+}

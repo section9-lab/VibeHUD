@@ -56,7 +56,7 @@ struct ClaudeInstancesView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.white.opacity(0.4))
 
-            Text("Run claude or codex in terminal")
+            Text("Run claudecode, codex, or opencode in terminal")
                 .font(.system(size: 11))
                 .foregroundColor(.white.opacity(0.25))
         }
@@ -500,7 +500,6 @@ struct InstanceRow: View {
     @State private var spinnerPhase = 0
     @State private var isYabaiAvailable = false
 
-    private let claudeOrange = Color(red: 0.85, green: 0.47, blue: 0.34)
     private let spinnerSymbols = ["·", "✢", "✳", "∗", "✻", "✽"]
     private let spinnerTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
 
@@ -542,6 +541,8 @@ struct InstanceRow: View {
             // Text content
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
+                    SessionSourceIcon(source: session.source, size: 12, animate: session.phase == .processing || session.phase == .compacting)
+
                     Text(session.displayTitle)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white)
@@ -709,7 +710,7 @@ struct InstanceRow: View {
         case .processing, .compacting:
             Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
                 .font(.system(size: 12, weight: .bold))
-                .foregroundColor(claudeOrange)
+                .foregroundColor(sourceAccentColor)
                 .onReceive(spinnerTimer) { _ in
                     spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
                 }
@@ -728,6 +729,17 @@ struct InstanceRow: View {
             Circle()
                 .fill(Color.white.opacity(0.2))
                 .frame(width: 6, height: 6)
+        }
+    }
+
+    private var sourceAccentColor: Color {
+        switch session.source {
+        case .claude:
+            Color(red: 0.85, green: 0.47, blue: 0.34)
+        case .codex:
+            Color(red: 122 / 255, green: 157 / 255, blue: 1.0)
+        case .opencode:
+            .white
         }
     }
 

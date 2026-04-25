@@ -8,6 +8,55 @@
 
 import Foundation
 
+enum SessionSource: String, Codable, Equatable, Sendable {
+    case claude
+    case codex
+    case opencode
+
+    nonisolated init(rawSource: String?, transcriptPath: String? = nil) {
+        if let normalized = rawSource?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            switch normalized {
+            case "claude", "claudecode":
+                self = .claude
+                return
+            case "codex":
+                self = .codex
+                return
+            case "opencode":
+                self = .opencode
+                return
+            default:
+                break
+            }
+        }
+
+        if let transcriptPath {
+            let lowercasedPath = transcriptPath.lowercased()
+            if lowercasedPath.contains("/.codex/") {
+                self = .codex
+                return
+            }
+            if lowercasedPath.contains("/.local/share/opencode/") {
+                self = .opencode
+                return
+            }
+        }
+
+        self = .claude
+    }
+
+    nonisolated var displayName: String {
+        switch self {
+        case .claude:
+            "Claude"
+        case .codex:
+            "Codex"
+        case .opencode:
+            "OpenCode"
+        }
+    }
+}
+
 /// Complete state for a single Claude session
 /// This is the single source of truth - all state reads and writes go through SessionStore
 struct SessionState: Equatable, Identifiable, Sendable {
@@ -16,6 +65,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
     let sessionId: String
     let cwd: String
     let projectName: String
+    var source: SessionSource
 
     // MARK: - Instance Metadata
 
@@ -74,6 +124,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         sessionId: String,
         cwd: String,
         projectName: String? = nil,
+        source: SessionSource = .claude,
         pid: Int? = nil,
         tty: String? = nil,
         inputSocketPath: String? = nil,
@@ -98,6 +149,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.sessionId = sessionId
         self.cwd = cwd
         self.projectName = projectName ?? URL(fileURLWithPath: cwd).lastPathComponent
+        self.source = source
         self.pid = pid
         self.tty = tty
         self.inputSocketPath = inputSocketPath

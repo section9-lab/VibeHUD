@@ -29,29 +29,43 @@ struct NotchView: View {
 
     @Namespace private var activityNamespace
 
-    /// Whether any Claude session is currently processing or compacting
+    private var prioritizedActiveSession: SessionState? {
+        sessionMonitor.instances
+            .filter { session in
+                session.phase == .processing ||
+                session.phase == .compacting ||
+                session.phase.isWaitingForApproval ||
+                isSessionWaitingForInputDisplay(session)
+            }
+            .sorted { a, b in
+                notchPriority(for: a) < notchPriority(for: b) ||
+                (notchPriority(for: a) == notchPriority(for: b) && a.lastActivity > b.lastActivity)
+            }
+            .first
+    }
+
+    private var primaryDisplayedSource: SessionSource {
+        switch viewModel.contentType {
+        case .chat(let session):
+            return session.source
+        case .instances, .menu:
+            return prioritizedActiveSession?.source ?? sessionMonitor.instances.sorted { $0.lastActivity > $1.lastActivity }.first?.source ?? .claude
+        }
+    }
+
+    /// Whether any session is currently processing or compacting
     private var isAnyProcessing: Bool {
         sessionMonitor.instances.contains { $0.phase == .processing || $0.phase == .compacting }
     }
 
-    /// Whether any Claude session has a pending permission request
+    /// Whether any session has a pending permission request
     private var hasPendingPermission: Bool {
         sessionMonitor.instances.contains { $0.phase.isWaitingForApproval }
     }
 
-    /// Whether any Claude session is waiting for user input (done/ready state) within the display window
+    /// Whether any session is waiting for user input (done/ready state) within the display window
     private var hasWaitingForInput: Bool {
-        let now = Date()
-        let displayDuration: TimeInterval = 30  // Show checkmark for 30 seconds
-
-        return sessionMonitor.instances.contains { session in
-            guard session.phase == .waitingForInput else { return false }
-            // Only show if within the 30-second display window
-            if let enteredAt = waitingForInputTimestamps[session.stableId] {
-                return now.timeIntervalSince(enteredAt) < displayDuration
-            }
-            return false
-        }
+        sessionMonitor.instances.contains(where: isSessionWaitingForInputDisplay)
     }
 
     // MARK: - Sizing
@@ -72,6 +86,12 @@ struct NotchView: View {
         if activityCoordinator.expandingActivity.show {
             switch activityCoordinator.expandingActivity.type {
             case .claude:
+                let baseWidth = 2 * max(0, closedNotchSize.height - 12) + 20
+                return baseWidth + permissionIndicatorWidth
+            case .codex:
+                let baseWidth = 2 * max(0, closedNotchSize.height - 12) + 20
+                return baseWidth + permissionIndicatorWidth
+            case .opencode:
                 let baseWidth = 2 * max(0, closedNotchSize.height - 12) + 20
                 return baseWidth + permissionIndicatorWidth
             case .none:
@@ -210,7 +230,7 @@ struct NotchView: View {
     // MARK: - Notch Layout
 
     private var isProcessing: Bool {
-        activityCoordinator.expandingActivity.show && activityCoordinator.expandingActivity.type == .claude
+        activityCoordinator.expandingActivity.show && activityCoordinator.expandingActivity.type != .none
     }
 
     /// Whether to show the expanded closed state (processing, pending permission, or waiting for input)
@@ -249,7 +269,7 @@ struct NotchView: View {
             // Left side - crab + optional permission indicator (visible when processing, pending, or waiting for input)
             if showClosedActivity {
                 HStack(spacing: 4) {
-                    ClaudeCrabIcon(size: 14, animateLegs: isProcessing)
+                    SessionSourceIcon(source: primaryDisplayedSource, size: 14, animate: isProcessing)
                         .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showClosedActivity)
 
                     // Permission indicator only (amber) - waiting for input shows checkmark on right
@@ -309,7 +329,7 @@ struct NotchView: View {
             // Show static crab only if not showing activity in headerRow
             // (headerRow handles crab + indicator when showClosedActivity is true)
             if !showClosedActivity {
-                ClaudeCrabIcon(size: 14)
+                SessionSourceIcon(source: primaryDisplayedSource, size: 14)
                     .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: !showClosedActivity)
                     .padding(.leading, 8)
             }
@@ -375,8 +395,7 @@ struct NotchView: View {
 
     private func handleProcessingChange() {
         if isAnyProcessing || hasPendingPermission {
-            // Show claude activity when processing or waiting for permission
-            activityCoordinator.showActivity(type: .claude)
+            activityCoordinator.showActivity(type: notchActivityType(for: prioritizedActiveSession?.source ?? .claude))
             isVisible = true
         } else if hasWaitingForInput {
             // Keep visible for waiting-for-input but hide the processing spinner
@@ -501,5 +520,37 @@ struct NotchView: View {
         }
 
         return false
+    }
+
+    private func notchPriority(for session: SessionState) -> Int {
+        switch session.phase {
+        case .waitingForApproval:
+            0
+        case .processing, .compacting:
+            1
+        case .waitingForInput:
+            2
+        case .idle, .ended:
+            3
+        }
+    }
+
+    private func notchActivityType(for source: SessionSource) -> NotchActivityType {
+        switch source {
+        case .claude:
+            .claude
+        case .codex:
+            .codex
+        case .opencode:
+            .opencode
+        }
+    }
+
+    private func isSessionWaitingForInputDisplay(_ session: SessionState) -> Bool {
+        guard session.phase == .waitingForInput,
+              let enteredAt = waitingForInputTimestamps[session.stableId] else {
+            return false
+        }
+        return Date().timeIntervalSince(enteredAt) < 30
     }
 }

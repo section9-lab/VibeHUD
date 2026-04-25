@@ -91,7 +91,7 @@ actor ConversationParser {
     }
 
     /// Parsed tool result data
-    struct ToolResult {
+    struct ToolResult: Equatable {
         let content: String?
         let stdout: String?
         let stderr: String?
@@ -141,6 +141,10 @@ actor ConversationParser {
 
     /// Parse JSONL content
     private func parseContent(_ content: String, filePath: String) -> ConversationInfo {
+        if isOpenCodeTranscript(filePath: filePath) {
+            return parseOpenCodeConversationInfo(filePath: filePath)
+        }
+
         if isCodexTranscript(filePath: filePath, content: content) {
             return parseCodexContent(content)
         }
@@ -334,6 +338,17 @@ actor ConversationParser {
             return []
         }
 
+        if isOpenCodeTranscript(filePath: sessionFile) {
+            let messages = parseOpenCodeFullConversation(sessionId: sessionId)
+            var state = incrementalState[sessionId] ?? IncrementalParseState()
+            state.messages = messages
+            state.completedToolIds = parseOpenCodeCompletedToolIds(sessionId: sessionId)
+            state.toolResults = parseOpenCodeToolResults(sessionId: sessionId)
+            state.structuredResults = parseOpenCodeStructuredResults(sessionId: sessionId)
+            incrementalState[sessionId] = state
+            return messages
+        }
+
         var state = incrementalState[sessionId] ?? IncrementalParseState()
         _ = parseNewLines(filePath: sessionFile, state: &state)
         incrementalState[sessionId] = state
@@ -349,6 +364,7 @@ actor ConversationParser {
         let toolResults: [String: ToolResult]
         let structuredResults: [String: ToolResultData]
         let clearDetected: Bool
+        let hasStateChanges: Bool
     }
 
     /// Parse only NEW messages since last call (efficient incremental updates)
@@ -362,11 +378,15 @@ actor ConversationParser {
                 completedToolIds: [],
                 toolResults: [:],
                 structuredResults: [:],
-                clearDetected: false
+                clearDetected: false,
+                hasStateChanges: false
             )
         }
 
         var state = incrementalState[sessionId] ?? IncrementalParseState()
+        let previousCompletedToolIds = state.completedToolIds
+        let previousToolResults = state.toolResults
+        let previousStructuredResults = state.structuredResults
         let newMessages = parseNewLines(filePath: sessionFile, state: &state)
         let clearDetected = state.clearPending
         if clearDetected {
@@ -380,12 +400,19 @@ actor ConversationParser {
             completedToolIds: state.completedToolIds,
             toolResults: state.toolResults,
             structuredResults: state.structuredResults,
-            clearDetected: clearDetected
+            clearDetected: clearDetected,
+            hasStateChanges: previousCompletedToolIds != state.completedToolIds ||
+                previousToolResults != state.toolResults ||
+                previousStructuredResults != state.structuredResults
         )
     }
 
     /// Parse only new lines since last read (incremental)
     private func parseNewLines(filePath: String, state: inout IncrementalParseState) -> [ChatMessage] {
+        if isOpenCodeTranscript(filePath: filePath) {
+            return parseNewOpenCodeLines(filePath: filePath, state: &state)
+        }
+
         if isCodexTranscript(filePath: filePath) {
             return parseNewCodexLines(filePath: filePath, state: &state)
         }
@@ -535,6 +562,10 @@ actor ConversationParser {
         return ClaudePaths.projectsDir.path + "/" + projectDir + "/" + sessionId + ".jsonl"
     }
 
+    nonisolated private func isOpenCodeTranscript(filePath: String) -> Bool {
+        filePath.contains("/.local/share/opencode/storage/session/")
+    }
+
     nonisolated private func isCodexTranscript(filePath: String, content: String? = nil) -> Bool {
         if filePath.contains("/.codex/") {
             return true
@@ -679,6 +710,315 @@ actor ConversationParser {
 
         state.lastFileOffset = fileSize
         return newMessages
+    }
+
+    private func parseOpenCodeConversationInfo(filePath: String) -> ConversationInfo {
+        guard let sessionData = FileManager.default.contents(atPath: filePath),
+              let sessionJson = try? JSONSerialization.jsonObject(with: sessionData) as? [String: Any] else {
+            return ConversationInfo(summary: nil, lastMessage: nil, lastMessageRole: nil, lastToolName: nil, firstUserMessage: nil, lastUserMessageDate: nil)
+        }
+
+        let sessionId = sessionJson["id"] as? String ?? filePath.components(separatedBy: "/").last?.replacingOccurrences(of: ".json", with: "") ?? ""
+        let title = sessionJson["title"] as? String
+        let messages = parseOpenCodeFullConversation(sessionId: sessionId)
+
+        let firstUserMessage = messages.first(where: { $0.role == .user })?.textContent
+        let lastUserMessage = messages.last(where: { $0.role == .user })
+        let lastMessage = messages.last
+        let lastToolName = lastMessage?.content.compactMap { block -> String? in
+            if case .toolUse(let tool) = block { return tool.name }
+            return nil
+        }.last
+
+        var usage = UsageInfo()
+        if let messageDir = openCodeMessagesDir(for: sessionId),
+           let enumerator = FileManager.default.enumerator(at: messageDir, includingPropertiesForKeys: nil) {
+            for case let fileURL as URL in enumerator where fileURL.pathExtension == "json" {
+                guard let data = try? Data(contentsOf: fileURL),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let tokens = json["tokens"] as? [String: Any] else { continue }
+
+                usage.inputTokens += tokens["input"] as? Int ?? 0
+                usage.outputTokens += tokens["output"] as? Int ?? 0
+                if let cache = tokens["cache"] as? [String: Any] {
+                    usage.cacheReadTokens += cache["read"] as? Int ?? 0
+                    usage.cacheCreationTokens += cache["write"] as? Int ?? 0
+                }
+            }
+        }
+
+        return ConversationInfo(
+            summary: title,
+            lastMessage: Self.truncateMessage(lastMessage?.textContent, maxLength: 80),
+            lastMessageRole: lastMessage?.role.rawValue,
+            lastToolName: lastToolName,
+            firstUserMessage: Self.truncateMessage(firstUserMessage, maxLength: 50),
+            lastUserMessageDate: lastUserMessage?.timestamp,
+            usage: usage
+        )
+    }
+
+    private func parseOpenCodeFullConversation(sessionId: String) -> [ChatMessage] {
+        guard let messageDir = openCodeMessagesDir(for: sessionId) else { return [] }
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: messageDir, includingPropertiesForKeys: nil)
+            .filter({ $0.pathExtension == "json" })
+            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) else {
+            return []
+        }
+
+        return files.compactMap { parseOpenCodeMessageFile($0) }
+    }
+
+    private func parseNewOpenCodeLines(filePath: String, state: inout IncrementalParseState) -> [ChatMessage] {
+        guard let sessionId = openCodeSessionId(from: filePath) else {
+            return []
+        }
+
+        let latestMessages = parseOpenCodeFullConversation(sessionId: sessionId)
+        let previousIds = Set(state.messages.map(\.id))
+        let newMessages = latestMessages.filter { !previousIds.contains($0.id) }
+
+        state.messages = latestMessages
+        state.completedToolIds = parseOpenCodeCompletedToolIds(sessionId: sessionId)
+        state.toolResults = parseOpenCodeToolResults(sessionId: sessionId)
+        state.structuredResults = parseOpenCodeStructuredResults(sessionId: sessionId)
+        state.lastFileOffset = UInt64(latestMessages.count)
+
+        return newMessages
+    }
+
+    private func parseOpenCodeCompletedToolIds(sessionId: String) -> Set<String> {
+        var completed = Set<String>()
+        let fm = FileManager.default
+        guard let messageIds = openCodeMessageIds(for: sessionId) else { return completed }
+
+        for messageId in messageIds {
+            let dir = OpenCodePaths.partsDir.appendingPathComponent(messageId)
+            guard let partFiles = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil),
+                  let completedPart = partFiles
+                    .filter({ $0.pathExtension == "json" })
+                    .compactMap({ parseOpenCodePartFile($0) })
+                    .first(where: { part in
+                        if case .toolUse(let tool) = part.block {
+                            return tool.input["__tool_status"] == "completed" || tool.input["__tool_status"] == "error"
+                        }
+                        return false
+                    }) else { continue }
+
+            if case .toolUse(let tool) = completedPart.block {
+                completed.insert(tool.id)
+            }
+        }
+
+        return completed
+    }
+
+    private func parseOpenCodeToolResults(sessionId: String) -> [String: ToolResult] {
+        var results: [String: ToolResult] = [:]
+        let fm = FileManager.default
+        guard let messageIds = openCodeMessageIds(for: sessionId) else { return results }
+
+        for messageId in messageIds {
+            let dir = OpenCodePaths.partsDir.appendingPathComponent(messageId)
+            guard let partFiles = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+                .filter({ $0.pathExtension == "json" })
+                .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) else { continue }
+
+            for file in partFiles {
+                guard let data = try? Data(contentsOf: file),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      json["type"] as? String == "tool",
+                      let callId = json["callID"] as? String,
+                      let stateJson = json["state"] as? [String: Any] else { continue }
+
+                let status = stateJson["status"] as? String ?? "pending"
+                guard status == "completed" || status == "error" else { continue }
+
+                let output = stateJson["output"] as? String
+                let error = stateJson["error"] as? String
+                results[callId] = ToolResult(
+                    content: output ?? error,
+                    stdout: output,
+                    stderr: error,
+                    isError: status == "error"
+                )
+            }
+        }
+
+        return results
+    }
+
+    private func parseOpenCodeStructuredResults(sessionId: String) -> [String: ToolResultData] {
+        var results: [String: ToolResultData] = [:]
+        let fm = FileManager.default
+        guard let messageIds = openCodeMessageIds(for: sessionId) else { return results }
+
+        for messageId in messageIds {
+            let dir = OpenCodePaths.partsDir.appendingPathComponent(messageId)
+            guard let partFiles = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+                .filter({ $0.pathExtension == "json" })
+                .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) else { continue }
+
+            for file in partFiles {
+                guard let data = try? Data(contentsOf: file),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      json["type"] as? String == "tool",
+                      let callId = json["callID"] as? String,
+                      let toolName = json["tool"] as? String,
+                      let stateJson = json["state"] as? [String: Any] else { continue }
+
+                let status = stateJson["status"] as? String ?? "pending"
+                guard status == "completed" || status == "error" else { continue }
+
+                let rawResult = stateJson["metadata"] as? [String: Any] ?? [:]
+                let genericText = stateJson["output"] as? String ?? stateJson["error"] as? String
+                results[callId] = .generic(GenericResult(
+                    rawContent: genericText,
+                    rawData: rawResult.isEmpty ? stateJson : rawResult
+                ))
+
+                if results[callId] == nil {
+                    results[callId] = .generic(GenericResult(rawContent: genericText, rawData: [
+                        "tool": toolName,
+                        "state": stateJson
+                    ]))
+                }
+            }
+        }
+
+        return results
+    }
+
+    private func parseOpenCodeMessageFile(_ url: URL) -> ChatMessage? {
+        guard let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = json["id"] as? String,
+              let roleString = json["role"] as? String else { return nil }
+
+        let role: ChatRole = roleString == "user" ? .user : .assistant
+        let timestampMs: Double
+        if let time = json["time"] as? [String: Any] {
+            timestampMs = (time["created"] as? Double) ??
+                Double(time["created"] as? Int ?? 0)
+        } else {
+            timestampMs = 0
+        }
+        let timestamp = Date(timeIntervalSince1970: timestampMs / 1000)
+        let sessionId = json["sessionID"] as? String ?? ""
+        let parts = parseOpenCodeParts(messageId: id, sessionId: sessionId)
+
+        if parts.isEmpty {
+            return nil
+        }
+
+        return ChatMessage(
+            id: id,
+            role: role,
+            timestamp: timestamp,
+            content: parts
+        )
+    }
+
+    private func parseOpenCodeParts(messageId: String, sessionId: String) -> [MessageBlock] {
+        let partDir = OpenCodePaths.partsDir.appendingPathComponent(messageId)
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: partDir, includingPropertiesForKeys: nil)
+            .filter({ $0.pathExtension == "json" })
+            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) else {
+            return []
+        }
+
+        return files.compactMap { parseOpenCodePartFile($0)?.block }
+    }
+
+    private func parseOpenCodePartFile(_ url: URL) -> (block: MessageBlock, timestamp: Date?)? {
+        guard let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = json["type"] as? String else {
+            return nil
+        }
+
+        switch type {
+        case "text":
+            guard let text = json["text"] as? String else { return nil }
+            return (.text(text), nil)
+
+        case "reasoning":
+            guard let text = json["text"] as? String else { return nil }
+            return (.thinking(text), nil)
+
+        case "tool":
+            guard let callId = json["callID"] as? String,
+                  let toolName = json["tool"] as? String,
+                  let state = json["state"] as? [String: Any] else {
+                return nil
+            }
+
+            var input: [String: String] = [:]
+            if let rawInput = state["input"] as? [String: Any] {
+                for (key, value) in rawInput {
+                    if let string = value as? String {
+                        input[key] = string
+                    } else if let int = value as? Int {
+                        input[key] = String(int)
+                    } else if let bool = value as? Bool {
+                        input[key] = bool ? "true" : "false"
+                    }
+                }
+            }
+
+            if let status = state["status"] as? String {
+                input["__tool_status"] = status
+            }
+            if let output = state["output"] as? String {
+                input["__tool_output"] = output
+            }
+            if let error = state["error"] as? String {
+                input["__tool_error"] = error
+            }
+
+            return (.toolUse(ToolUseBlock(id: callId, name: normalizeOpenCodeToolName(toolName), input: input)), nil)
+
+        default:
+            return nil
+        }
+    }
+
+    nonisolated private func normalizeOpenCodeToolName(_ name: String) -> String {
+        switch name.lowercased() {
+        case "bash": return "Bash"
+        case "read": return "Read"
+        case "write": return "Write"
+        case "edit": return "Edit"
+        case "glob": return "Glob"
+        case "grep": return "Grep"
+        case "webfetch": return "WebFetch"
+        case "websearch": return "WebSearch"
+        case "task": return "Agent"
+        default: return name
+        }
+    }
+
+    nonisolated private func openCodeSessionId(from filePath: String) -> String? {
+        let fileName = URL(fileURLWithPath: filePath).lastPathComponent
+        return fileName.hasSuffix(".json") ? String(fileName.dropLast(5)) : nil
+    }
+
+    nonisolated private func openCodeMessagesDir(for sessionId: String) -> URL? {
+        let dir = OpenCodePaths.messagesDir.appendingPathComponent(sessionId)
+        return FileManager.default.fileExists(atPath: dir.path) ? dir : nil
+    }
+
+    nonisolated private func openCodeMessageIds(for sessionId: String) -> [String]? {
+        guard let messageDir = openCodeMessagesDir(for: sessionId),
+              let messageFiles = try? FileManager.default.contentsOfDirectory(at: messageDir, includingPropertiesForKeys: nil)
+            .filter({ $0.pathExtension == "json" }) else {
+            return nil
+        }
+
+        let messageIds = messageFiles.map { $0.deletingPathExtension().lastPathComponent }
+        return messageIds.isEmpty ? nil : messageIds
     }
 
     private func makeCodexChatMessage(

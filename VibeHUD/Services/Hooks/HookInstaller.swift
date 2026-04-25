@@ -30,6 +30,7 @@ struct HookInstaller {
         installScript(resource: "vibe-hud-bridge", to: bridgeScript)
         installScript(resource: "vibe-hud-tty-bridge", to: ttyBridgeScript)
         installCodexHooksIfNeeded()
+        installOpenCodeHooksIfNeeded()
 
         let launcher = """
         #!/bin/sh
@@ -52,6 +53,16 @@ struct HookInstaller {
 
         installScript(resource: "vibe-hud-state", to: CodexPaths.hookScriptPath)
         updateCodexHooks(at: CodexPaths.hooksFile)
+    }
+
+    private static func installOpenCodeHooksIfNeeded() {
+        try? FileManager.default.createDirectory(
+            at: OpenCodePaths.pluginDir,
+            withIntermediateDirectories: true
+        )
+
+        installScript(resource: "vibe-hud", to: OpenCodePaths.pluginFile, extension: "js")
+        updateOpenCodeConfig(at: OpenCodePaths.configFile)
     }
 
     private static func updateSettings(at settingsURL: URL) {
@@ -152,9 +163,33 @@ struct HookInstaller {
         }
     }
 
+    private static func updateOpenCodeConfig(at configURL: URL) {
+        var json: [String: Any] = [
+            "$schema": "https://opencode.ai/config.json"
+        ]
+        if let data = try? Data(contentsOf: configURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
+        }
+
+        var plugins = json["plugin"] as? [String] ?? []
+        plugins.removeAll(where: isVibeHUDOpenCodePlugin)
+        plugins.append(OpenCodePaths.pluginFileURLString)
+        json["plugin"] = plugins
+
+        if let data = try? JSONSerialization.data(
+            withJSONObject: json,
+            options: [.prettyPrinted, .sortedKeys]
+        ) {
+            try? data.write(to: configURL)
+        }
+    }
+
     /// Check if hooks are currently installed
     static func isInstalled() -> Bool {
-        isInstalled(at: ClaudePaths.settingsFile) || isInstalled(at: CodexPaths.hooksFile)
+        isInstalled(at: ClaudePaths.settingsFile) ||
+        isInstalled(at: CodexPaths.hooksFile) ||
+        isInstalledOpenCode(at: OpenCodePaths.configFile)
     }
 
     /// Uninstall hooks from settings.json and remove script
@@ -171,9 +206,11 @@ struct HookInstaller {
         try? FileManager.default.removeItem(at: ttyBridgeScript)
         try? FileManager.default.removeItem(at: bridgeLauncher)
         try? FileManager.default.removeItem(at: CodexPaths.hookScriptPath)
+        try? FileManager.default.removeItem(at: OpenCodePaths.pluginFile)
 
         removeHooks(at: settings)
         removeHooks(at: CodexPaths.hooksFile)
+        removeOpenCodePlugin(at: OpenCodePaths.configFile)
     }
 
     private static func isInstalled(at url: URL) -> Bool {
@@ -233,8 +270,41 @@ struct HookInstaller {
         }
     }
 
-    private static func installScript(resource: String, to destination: URL) {
-        guard let bundled = Bundle.main.url(forResource: resource, withExtension: "py") else { return }
+    private static func removeOpenCodePlugin(at url: URL) {
+        guard let data = try? Data(contentsOf: url),
+              var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return
+        }
+
+        var plugins = json["plugin"] as? [String] ?? []
+        plugins.removeAll(where: isVibeHUDOpenCodePlugin)
+
+        if plugins.isEmpty {
+            json.removeValue(forKey: "plugin")
+        } else {
+            json["plugin"] = plugins
+        }
+
+        if let updated = try? JSONSerialization.data(
+            withJSONObject: json,
+            options: [.prettyPrinted, .sortedKeys]
+        ) {
+            try? updated.write(to: url)
+        }
+    }
+
+    private static func isInstalledOpenCode(at url: URL) -> Bool {
+        guard let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let plugins = json["plugin"] as? [String] else {
+            return false
+        }
+
+        return plugins.contains(where: isVibeHUDOpenCodePlugin)
+    }
+
+    private static func installScript(resource: String, to destination: URL, extension ext: String = "py") {
+        guard let bundled = Bundle.main.url(forResource: resource, withExtension: ext) else { return }
         try? FileManager.default.removeItem(at: destination)
         try? FileManager.default.copyItem(at: bundled, to: destination)
         try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
@@ -274,5 +344,9 @@ struct HookInstaller {
     nonisolated private static func isVibeHUDHook(_ hook: [String: Any]) -> Bool {
         let cmd = hook["command"] as? String ?? ""
         return cmd.contains("vibe-hud-state.py")
+    }
+
+    nonisolated private static func isVibeHUDOpenCodePlugin(_ plugin: String) -> Bool {
+        plugin == OpenCodePaths.pluginFileURLString || plugin.contains("/plugin/vibe-hud.js")
     }
 }

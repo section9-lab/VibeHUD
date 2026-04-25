@@ -145,6 +145,7 @@ actor SessionStore {
         if let transcriptPath = event.transcriptPath, !transcriptPath.isEmpty {
             session.transcriptPath = transcriptPath
         }
+        session.source = SessionSource(rawSource: event.source, transcriptPath: session.transcriptPath)
         if let terminalBundleId = event.terminalBundleId, !terminalBundleId.isEmpty {
             session.terminalBundleId = terminalBundleId
         }
@@ -198,6 +199,7 @@ actor SessionStore {
             sessionId: event.sessionId,
             cwd: event.cwd,
             projectName: URL(fileURLWithPath: event.cwd).lastPathComponent,
+            source: SessionSource(rawSource: event.source, transcriptPath: event.transcriptPath),
             pid: event.pid,
             tty: event.tty?.replacingOccurrences(of: "/dev/", with: ""),
             inputSocketPath: event.inputSocket,
@@ -1051,7 +1053,7 @@ actor SessionStore {
                 await self?.process(.clearDetected(sessionId: sessionId))
             }
 
-            guard !result.newMessages.isEmpty || result.clearDetected else {
+            guard !result.newMessages.isEmpty || result.clearDetected || result.hasStateChanges else {
                 return
             }
 
