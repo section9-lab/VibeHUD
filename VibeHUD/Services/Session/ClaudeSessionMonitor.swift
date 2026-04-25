@@ -44,10 +44,17 @@ class ClaudeSessionMonitor: ObservableObject {
 
                 if event.sessionPhase == .processing {
                     Task { @MainActor in
-                        InterruptWatcherManager.shared.startWatching(
-                            sessionId: event.sessionId,
-                            cwd: event.cwd
-                        )
+                        if let transcriptPath = event.transcriptPath, !transcriptPath.isEmpty {
+                            InterruptWatcherManager.shared.startWatching(
+                                sessionId: event.sessionId,
+                                filePath: transcriptPath
+                            )
+                        } else {
+                            InterruptWatcherManager.shared.startWatching(
+                                sessionId: event.sessionId,
+                                cwd: event.cwd
+                            )
+                        }
                     }
                 }
 

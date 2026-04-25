@@ -133,3 +133,33 @@ enum ClaudePaths {
         "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
+
+enum CodexPaths {
+    nonisolated static var codexDir: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+    }
+
+    nonisolated static var hooksDir: URL {
+        codexDir.appendingPathComponent("hooks")
+    }
+
+    nonisolated static var hooksFile: URL {
+        codexDir.appendingPathComponent("hooks.json")
+    }
+
+    nonisolated static var sessionsDir: URL {
+        codexDir.appendingPathComponent("sessions")
+    }
+
+    nonisolated static var hookScriptPath: URL {
+        hooksDir.appendingPathComponent("vibe-hud-state.py")
+    }
+
+    nonisolated static var hookScriptShellPath: String {
+        shellQuote(hookScriptPath.path)
+    }
+
+    nonisolated private static func shellQuote(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}

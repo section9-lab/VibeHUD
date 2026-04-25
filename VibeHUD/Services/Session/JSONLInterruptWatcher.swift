@@ -44,6 +44,11 @@ class JSONLInterruptWatcher {
         self.filePath = ClaudePaths.projectsDir.path + "/" + projectDir + "/" + sessionId + ".jsonl"
     }
 
+    init(sessionId: String, filePath: String) {
+        self.sessionId = sessionId
+        self.filePath = filePath
+    }
+
     /// Start watching the JSONL file for interrupts
     func start() {
         queue.async { [weak self] in
@@ -189,6 +194,15 @@ class InterruptWatcherManager {
         guard watchers[sessionId] == nil else { return }
 
         let watcher = JSONLInterruptWatcher(sessionId: sessionId, cwd: cwd)
+        watcher.delegate = delegate
+        watcher.start()
+        watchers[sessionId] = watcher
+    }
+
+    func startWatching(sessionId: String, filePath: String) {
+        guard watchers[sessionId] == nil else { return }
+
+        let watcher = JSONLInterruptWatcher(sessionId: sessionId, filePath: filePath)
         watcher.delegate = delegate
         watcher.start()
         watchers[sessionId] = watcher

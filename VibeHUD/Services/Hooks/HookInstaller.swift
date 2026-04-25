@@ -29,6 +29,7 @@ struct HookInstaller {
         installScript(resource: "vibe-hud-state", to: pythonScript)
         installScript(resource: "vibe-hud-bridge", to: bridgeScript)
         installScript(resource: "vibe-hud-tty-bridge", to: ttyBridgeScript)
+        installCodexHooksIfNeeded()
 
         let launcher = """
         #!/bin/sh
@@ -41,6 +42,16 @@ struct HookInstaller {
         )
 
         updateSettings(at: ClaudePaths.settingsFile)
+    }
+
+    private static func installCodexHooksIfNeeded() {
+        try? FileManager.default.createDirectory(
+            at: CodexPaths.hooksDir,
+            withIntermediateDirectories: true
+        )
+
+        installScript(resource: "vibe-hud-state", to: CodexPaths.hookScriptPath)
+        updateCodexHooks(at: CodexPaths.hooksFile)
     }
 
     private static func updateSettings(at settingsURL: URL) {
@@ -106,11 +117,67 @@ struct HookInstaller {
         }
     }
 
+    private static func updateCodexHooks(at hooksURL: URL) {
+        var json: [String: Any] = [:]
+        if let data = try? Data(contentsOf: hooksURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json = existing
+        }
+
+        let python = detectPython()
+        let command = "\(python) \(CodexPaths.hookScriptShellPath)"
+        let hookEntry: [[String: Any]] = [[
+            "type": "command",
+            "command": command,
+            "timeout": 10
+        ]]
+        let vibeHUDEventEntry: [String: Any] = ["hooks": hookEntry]
+
+        var hooks = json["hooks"] as? [String: Any] ?? [:]
+        let hookEvents = ["SessionStart", "UserPromptSubmit", "Stop", "PreToolUse", "PostToolUse"]
+
+        for event in hookEvents {
+            let existingEvent = hooks[event] as? [[String: Any]] ?? []
+            let cleanedEvent = existingEvent.compactMap { removingVibeHUDHooks(from: $0) }
+            hooks[event] = cleanedEvent + [vibeHUDEventEntry]
+        }
+
+        json["hooks"] = hooks
+
+        if let data = try? JSONSerialization.data(
+            withJSONObject: json,
+            options: [.prettyPrinted, .sortedKeys]
+        ) {
+            try? data.write(to: hooksURL)
+        }
+    }
+
     /// Check if hooks are currently installed
     static func isInstalled() -> Bool {
+        isInstalled(at: ClaudePaths.settingsFile) || isInstalled(at: CodexPaths.hooksFile)
+    }
+
+    /// Uninstall hooks from settings.json and remove script
+    static func uninstall() {
+        let hooksDir = ClaudePaths.hooksDir
+        let pythonScript = hooksDir.appendingPathComponent("vibe-hud-state.py")
+        let bridgeScript = ClaudePaths.bridgeScriptPath
+        let ttyBridgeScript = hooksDir.appendingPathComponent("vibe-hud-tty-bridge.py")
+        let bridgeLauncher = ClaudePaths.bridgeLauncherPath
         let settings = ClaudePaths.settingsFile
 
-        guard let data = try? Data(contentsOf: settings),
+        try? FileManager.default.removeItem(at: pythonScript)
+        try? FileManager.default.removeItem(at: bridgeScript)
+        try? FileManager.default.removeItem(at: ttyBridgeScript)
+        try? FileManager.default.removeItem(at: bridgeLauncher)
+        try? FileManager.default.removeItem(at: CodexPaths.hookScriptPath)
+
+        removeHooks(at: settings)
+        removeHooks(at: CodexPaths.hooksFile)
+    }
+
+    private static func isInstalled(at url: URL) -> Bool {
+        guard let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let hooks = json["hooks"] as? [String: Any] else {
             return false
@@ -133,21 +200,8 @@ struct HookInstaller {
         return false
     }
 
-    /// Uninstall hooks from settings.json and remove script
-    static func uninstall() {
-        let hooksDir = ClaudePaths.hooksDir
-        let pythonScript = hooksDir.appendingPathComponent("vibe-hud-state.py")
-        let bridgeScript = ClaudePaths.bridgeScriptPath
-        let ttyBridgeScript = hooksDir.appendingPathComponent("vibe-hud-tty-bridge.py")
-        let bridgeLauncher = ClaudePaths.bridgeLauncherPath
-        let settings = ClaudePaths.settingsFile
-
-        try? FileManager.default.removeItem(at: pythonScript)
-        try? FileManager.default.removeItem(at: bridgeScript)
-        try? FileManager.default.removeItem(at: ttyBridgeScript)
-        try? FileManager.default.removeItem(at: bridgeLauncher)
-
-        guard let data = try? Data(contentsOf: settings),
+    private static func removeHooks(at url: URL) {
+        guard let data = try? Data(contentsOf: url),
               var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               var hooks = json["hooks"] as? [String: Any] else {
             return
@@ -171,11 +225,11 @@ struct HookInstaller {
             json["hooks"] = hooks
         }
 
-        if let data = try? JSONSerialization.data(
+        if let updated = try? JSONSerialization.data(
             withJSONObject: json,
             options: [.prettyPrinted, .sortedKeys]
         ) {
-            try? data.write(to: settings)
+            try? updated.write(to: url)
         }
     }
 

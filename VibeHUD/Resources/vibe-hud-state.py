@@ -2,7 +2,7 @@
 """
 VibeHUD Hook
 - Sends session state to VibeHUD.app via Unix socket
-- For PermissionRequest: waits for user decision from the app
+- For Claude PermissionRequest: waits for user decision from the app
 """
 import json
 import os
@@ -210,6 +210,7 @@ def main():
     except json.JSONDecodeError:
         sys.exit(1)
 
+    source = "codex" if data.get("transcript_path") else "claude"
     session_id = data.get("session_id", "unknown")
     event = data.get("hook_event_name", "")
     cwd = data.get("cwd", "")
@@ -232,9 +233,11 @@ def main():
         "session_id": session_id,
         "cwd": cwd,
         "event": event,
+        "source": source,
         "pid": claude_pid,
         "tty": tty,
         "input_socket": input_socket,
+        "transcript_path": data.get("transcript_path"),
         "terminal_pid": terminal_pid,
         "terminal_bundle_id": terminal_bundle_id,
         "tmux_pane": os.environ.get("TMUX_PANE"),

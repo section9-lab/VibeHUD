@@ -114,9 +114,8 @@ actor ConversationParser {
 
     /// Parse a JSONL file to extract conversation info
     /// Uses caching based on file modification time
-    func parse(sessionId: String, cwd: String) -> ConversationInfo {
-        let projectDir = cwd.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
-        let sessionFile = ClaudePaths.projectsDir.path + "/" + projectDir + "/" + sessionId + ".jsonl"
+    func parse(sessionId: String, cwd: String, transcriptPath: String? = nil) -> ConversationInfo {
+        let sessionFile = Self.sessionFilePath(sessionId: sessionId, cwd: cwd, transcriptPath: transcriptPath)
 
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: sessionFile),
@@ -134,14 +133,18 @@ actor ConversationParser {
             return ConversationInfo(summary: nil, lastMessage: nil, lastMessageRole: nil, lastToolName: nil, firstUserMessage: nil, lastUserMessageDate: nil)
         }
 
-        let info = parseContent(content)
+        let info = parseContent(content, filePath: sessionFile)
         cache[sessionFile] = CachedInfo(modificationDate: modDate, info: info)
 
         return info
     }
 
     /// Parse JSONL content
-    private func parseContent(_ content: String) -> ConversationInfo {
+    private func parseContent(_ content: String, filePath: String) -> ConversationInfo {
+        if isCodexTranscript(filePath: filePath, content: content) {
+            return parseCodexContent(content)
+        }
+
         let lines = content.components(separatedBy: "\n").filter { !$0.isEmpty }
 
         var summary: String?
@@ -324,8 +327,8 @@ actor ConversationParser {
     // MARK: - Full Conversation Parsing
 
     /// Parse full conversation history for chat view (returns ALL messages - use sparingly)
-    func parseFullConversation(sessionId: String, cwd: String) -> [ChatMessage] {
-        let sessionFile = Self.sessionFilePath(sessionId: sessionId, cwd: cwd)
+    func parseFullConversation(sessionId: String, cwd: String, transcriptPath: String? = nil) -> [ChatMessage] {
+        let sessionFile = Self.sessionFilePath(sessionId: sessionId, cwd: cwd, transcriptPath: transcriptPath)
 
         guard FileManager.default.fileExists(atPath: sessionFile) else {
             return []
@@ -349,8 +352,8 @@ actor ConversationParser {
     }
 
     /// Parse only NEW messages since last call (efficient incremental updates)
-    func parseIncremental(sessionId: String, cwd: String) -> IncrementalParseResult {
-        let sessionFile = Self.sessionFilePath(sessionId: sessionId, cwd: cwd)
+    func parseIncremental(sessionId: String, cwd: String, transcriptPath: String? = nil) -> IncrementalParseResult {
+        let sessionFile = Self.sessionFilePath(sessionId: sessionId, cwd: cwd, transcriptPath: transcriptPath)
 
         guard FileManager.default.fileExists(atPath: sessionFile) else {
             return IncrementalParseResult(
@@ -383,6 +386,10 @@ actor ConversationParser {
 
     /// Parse only new lines since last read (incremental)
     private func parseNewLines(filePath: String, state: inout IncrementalParseState) -> [ChatMessage] {
+        if isCodexTranscript(filePath: filePath) {
+            return parseNewCodexLines(filePath: filePath, state: &state)
+        }
+
         guard let fileHandle = FileHandle(forReadingAtPath: filePath) else {
             return []
         }
@@ -520,9 +527,181 @@ actor ConversationParser {
     }
 
     /// Build session file path
-    nonisolated private static func sessionFilePath(sessionId: String, cwd: String) -> String {
+    nonisolated private static func sessionFilePath(sessionId: String, cwd: String, transcriptPath: String? = nil) -> String {
+        if let transcriptPath, !transcriptPath.isEmpty {
+            return transcriptPath
+        }
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
         return ClaudePaths.projectsDir.path + "/" + projectDir + "/" + sessionId + ".jsonl"
+    }
+
+    nonisolated private func isCodexTranscript(filePath: String, content: String? = nil) -> Bool {
+        if filePath.contains("/.codex/") {
+            return true
+        }
+        if let content {
+            return content.contains("\"type\":\"session_meta\"") || content.contains("\"type\":\"event_msg\"")
+        }
+        return false
+    }
+
+    private func parseCodexContent(_ content: String) -> ConversationInfo {
+        let lines = content.components(separatedBy: "\n").filter { !$0.isEmpty }
+
+        var summary: String?
+        var lastMessage: String?
+        var lastMessageRole: String?
+        var firstUserMessage: String?
+        var lastUserMessageDate: Date?
+
+        for line in lines {
+            guard let lineData = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
+                continue
+            }
+
+            if summary == nil,
+               json["type"] as? String == "session_meta",
+               let payload = json["payload"] as? [String: Any],
+               let threadName = payload["thread_name"] as? String,
+               !threadName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                summary = threadName
+            }
+
+            guard json["type"] as? String == "event_msg",
+                  let payload = json["payload"] as? [String: Any],
+                  let eventType = payload["type"] as? String else {
+                continue
+            }
+
+            switch eventType {
+            case "user_message":
+                guard let message = payload["message"] as? String,
+                      !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                if firstUserMessage == nil {
+                    firstUserMessage = Self.truncateMessage(message, maxLength: 50)
+                }
+                lastUserMessageDate = parseCodexTimestamp(json["timestamp"] as? String)
+                lastMessage = Self.truncateMessage(message, maxLength: 80)
+                lastMessageRole = "user"
+            case "agent_message":
+                guard let message = payload["message"] as? String,
+                      !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                lastMessage = Self.truncateMessage(message, maxLength: 80)
+                lastMessageRole = "assistant"
+            default:
+                continue
+            }
+        }
+
+        return ConversationInfo(
+            summary: summary,
+            lastMessage: lastMessage,
+            lastMessageRole: lastMessageRole,
+            lastToolName: nil,
+            firstUserMessage: firstUserMessage,
+            lastUserMessageDate: lastUserMessageDate
+        )
+    }
+
+    private func parseNewCodexLines(filePath: String, state: inout IncrementalParseState) -> [ChatMessage] {
+        guard let fileHandle = FileHandle(forReadingAtPath: filePath) else {
+            return []
+        }
+        defer { try? fileHandle.close() }
+
+        let fileSize: UInt64
+        do {
+            fileSize = try fileHandle.seekToEnd()
+        } catch {
+            return []
+        }
+
+        if fileSize < state.lastFileOffset {
+            state = IncrementalParseState()
+        }
+
+        if fileSize == state.lastFileOffset {
+            return []
+        }
+
+        do {
+            try fileHandle.seek(toOffset: state.lastFileOffset)
+        } catch {
+            return []
+        }
+
+        guard let newData = try? fileHandle.readToEnd(),
+              let newContent = String(data: newData, encoding: .utf8) else {
+            return []
+        }
+
+        let lines = newContent.components(separatedBy: "\n")
+        var newMessages: [ChatMessage] = []
+
+        for line in lines where !line.isEmpty {
+            guard let lineData = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  json["type"] as? String == "event_msg",
+                  let payload = json["payload"] as? [String: Any],
+                  let eventType = payload["type"] as? String else {
+                continue
+            }
+
+            let timestamp = parseCodexTimestamp(json["timestamp"] as? String) ?? Date()
+            switch eventType {
+            case "user_message":
+                if let message = payload["message"] as? String,
+                   let chatMessage = makeCodexChatMessage(
+                    role: .user,
+                    text: message,
+                    timestamp: timestamp,
+                    discriminator: "user"
+                   ) {
+                    newMessages.append(chatMessage)
+                    state.messages.append(chatMessage)
+                }
+            case "agent_message":
+                if let message = payload["message"] as? String,
+                   let chatMessage = makeCodexChatMessage(
+                    role: .assistant,
+                    text: message,
+                    timestamp: timestamp,
+                    discriminator: payload["phase"] as? String ?? "assistant"
+                   ) {
+                    newMessages.append(chatMessage)
+                    state.messages.append(chatMessage)
+                }
+            default:
+                continue
+            }
+        }
+
+        state.lastFileOffset = fileSize
+        return newMessages
+    }
+
+    private func makeCodexChatMessage(
+        role: ChatRole,
+        text: String,
+        timestamp: Date,
+        discriminator: String
+    ) -> ChatMessage? {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return nil }
+
+        let identifierBase = "\(timestamp.timeIntervalSince1970)-\(discriminator)-\(cleaned.prefix(120))"
+        return ChatMessage(
+            id: "codex-\(StableHash.hash(identifierBase.prefix(200)))",
+            role: role,
+            timestamp: timestamp,
+            content: [.text(cleaned)]
+        )
+    }
+
+    private func parseCodexTimestamp(_ timestampStr: String?) -> Date? {
+        guard let timestampStr else { return nil }
+        return isoFormatter.date(from: timestampStr)
     }
 
     /// Build subagent JSONL file path.

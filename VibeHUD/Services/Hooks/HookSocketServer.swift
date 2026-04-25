@@ -18,9 +18,11 @@ struct HookEvent: Codable, Sendable {
     let cwd: String
     let event: String
     let status: String
+    let source: String?
     let pid: Int?
     let tty: String?
     let inputSocket: String?
+    let transcriptPath: String?
     let terminalBundleId: String?
     let terminalPid: Int?
     let tmuxPane: String?
@@ -34,7 +36,9 @@ struct HookEvent: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
         case cwd, event, status, pid, tty, tool
+        case source
         case inputSocket = "input_socket"
+        case transcriptPath = "transcript_path"
         case terminalBundleId = "terminal_bundle_id"
         case terminalPid = "terminal_pid"
         case tmuxPane = "tmux_pane"
@@ -51,9 +55,11 @@ struct HookEvent: Codable, Sendable {
         cwd: String,
         event: String,
         status: String,
+        source: String?,
         pid: Int?,
         tty: String?,
         inputSocket: String?,
+        transcriptPath: String?,
         terminalBundleId: String?,
         terminalPid: Int?,
         tmuxPane: String?,
@@ -68,9 +74,11 @@ struct HookEvent: Codable, Sendable {
         self.cwd = cwd
         self.event = event
         self.status = status
+        self.source = source
         self.pid = pid
         self.tty = tty
         self.inputSocket = inputSocket
+        self.transcriptPath = transcriptPath
         self.terminalBundleId = terminalBundleId
         self.terminalPid = terminalPid
         self.tmuxPane = tmuxPane
@@ -473,9 +481,11 @@ class HookSocketServer {
                 cwd: event.cwd,
                 event: event.event,
                 status: event.status,
+                source: event.source,
                 pid: event.pid,
                 tty: event.tty,
                 inputSocket: event.inputSocket,
+                transcriptPath: event.transcriptPath,
                 terminalBundleId: event.terminalBundleId,
                 terminalPid: event.terminalPid,
                 tmuxPane: event.tmuxPane,

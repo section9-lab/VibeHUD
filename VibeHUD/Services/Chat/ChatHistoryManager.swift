@@ -53,6 +53,7 @@ class ChatHistoryManager: ObservableObject {
         let payload = FileUpdatePayload(
             sessionId: sessionId,
             cwd: cwd,
+            transcriptPath: nil,
             messages: messages,
             isIncremental: false,  // Full sync
             completedToolIds: completedTools,

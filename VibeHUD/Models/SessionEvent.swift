@@ -81,6 +81,7 @@ enum SessionEvent: Sendable {
 struct FileUpdatePayload: Sendable {
     let sessionId: String
     let cwd: String
+    let transcriptPath: String?
     /// Messages to process - either only new messages (if isIncremental) or all messages
     let messages: [ChatMessage]
     /// When true, messages contains only NEW messages since last update

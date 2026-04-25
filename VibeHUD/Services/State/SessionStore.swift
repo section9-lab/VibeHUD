@@ -142,6 +142,9 @@ actor SessionStore {
         if let inputSocket = event.inputSocket, !inputSocket.isEmpty {
             session.inputSocketPath = inputSocket
         }
+        if let transcriptPath = event.transcriptPath, !transcriptPath.isEmpty {
+            session.transcriptPath = transcriptPath
+        }
         if let terminalBundleId = event.terminalBundleId, !terminalBundleId.isEmpty {
             session.terminalBundleId = terminalBundleId
         }
@@ -198,6 +201,7 @@ actor SessionStore {
             pid: event.pid,
             tty: event.tty?.replacingOccurrences(of: "/dev/", with: ""),
             inputSocketPath: event.inputSocket,
+            transcriptPath: event.transcriptPath,
             terminalBundleId: event.terminalBundleId,
             terminalPid: event.terminalPid,
             tmuxPane: event.tmuxPane,
@@ -578,6 +582,8 @@ actor SessionStore {
         let conversationInfo = await ConversationParser.shared.parse(
             sessionId: payload.sessionId,
             cwd: session.cwd
+            ,
+            transcriptPath: payload.transcriptPath ?? session.transcriptPath
         )
         session.conversationInfo = conversationInfo
 
@@ -956,7 +962,8 @@ actor SessionStore {
         // Parse file asynchronously
         let messages = await ConversationParser.shared.parseFullConversation(
             sessionId: sessionId,
-            cwd: cwd
+            cwd: cwd,
+            transcriptPath: sessions[sessionId]?.transcriptPath
         )
         let completedTools = await ConversationParser.shared.completedToolIds(for: sessionId)
         let toolResults = await ConversationParser.shared.toolResults(for: sessionId)
@@ -965,7 +972,8 @@ actor SessionStore {
         // Also parse conversationInfo (summary, lastMessage, etc.)
         let conversationInfo = await ConversationParser.shared.parse(
             sessionId: sessionId,
-            cwd: cwd
+            cwd: cwd,
+            transcriptPath: sessions[sessionId]?.transcriptPath
         )
 
         // Process loaded history
@@ -1025,6 +1033,7 @@ actor SessionStore {
     private func scheduleFileSync(sessionId: String, cwd: String) {
         // Cancel existing sync
         cancelPendingSync(sessionId: sessionId)
+        let transcriptPath = sessions[sessionId]?.transcriptPath
 
         // Schedule new debounced sync
         pendingSyncs[sessionId] = Task { [weak self, syncDebounceNs] in
@@ -1034,7 +1043,8 @@ actor SessionStore {
             // Parse incrementally - only get NEW messages since last call
             let result = await ConversationParser.shared.parseIncremental(
                 sessionId: sessionId,
-                cwd: cwd
+                cwd: cwd,
+                transcriptPath: transcriptPath
             )
 
             if result.clearDetected {
@@ -1048,6 +1058,7 @@ actor SessionStore {
             let payload = FileUpdatePayload(
                 sessionId: sessionId,
                 cwd: cwd,
+                transcriptPath: transcriptPath,
                 messages: result.newMessages,
                 isIncremental: !result.clearDetected,
                 completedToolIds: result.completedToolIds,
