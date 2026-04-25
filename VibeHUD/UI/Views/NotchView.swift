@@ -47,7 +47,7 @@ struct NotchView: View {
     private var primaryDisplayedSource: SessionSource {
         switch viewModel.contentType {
         case .chat(let session):
-            return session.source
+            return sessionMonitor.instances.first { $0.sessionId == session.sessionId }?.source ?? session.source
         case .instances, .menu:
             return prioritizedActiveSession?.source ?? sessionMonitor.instances.sorted { $0.lastActivity > $1.lastActivity }.first?.source ?? .claude
         }
@@ -379,9 +379,10 @@ struct NotchView: View {
             case .menu:
                 NotchMenuView(viewModel: viewModel)
             case .chat(let session):
+                let latestSession = sessionMonitor.instances.first { $0.sessionId == session.sessionId } ?? session
                 ChatView(
-                    sessionId: session.sessionId,
-                    initialSession: session,
+                    sessionId: latestSession.sessionId,
+                    initialSession: latestSession,
                     sessionMonitor: sessionMonitor,
                     viewModel: viewModel
                 )

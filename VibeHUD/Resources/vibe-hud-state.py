@@ -14,6 +14,39 @@ import time
 SOCKET_PATH = "/tmp/vibe-hud.sock"
 TIMEOUT_SECONDS = 300  # 5 minutes for permission decisions
 TTY_BRIDGE_PROTOCOL = "v4"
+VALID_SOURCES = {"claude", "codex", "opencode"}
+
+
+def parse_source_arg():
+    """Read an explicit source from the hook command, matching Vibe Island's approach."""
+    for index, arg in enumerate(sys.argv[1:]):
+        if arg == "--source" and index + 2 <= len(sys.argv[1:]):
+            source = sys.argv[index + 2].strip().lower()
+            return source if source in VALID_SOURCES else None
+        if arg.startswith("--source="):
+            source = arg.split("=", 1)[1].strip().lower()
+            return source if source in VALID_SOURCES else None
+    return None
+
+
+def infer_source(data):
+    """Best-effort fallback for older installed hooks that do not pass --source."""
+    explicit = data.get("source")
+    if isinstance(explicit, str) and explicit.strip().lower() in VALID_SOURCES:
+        return explicit.strip().lower()
+
+    if data.get("hook_event_name") in {"PreCompact", "PostCompact", "PermissionRequest", "Notification"}:
+        return "claude"
+
+    transcript_path = data.get("transcript_path")
+    if isinstance(transcript_path, str):
+        lower_path = transcript_path.lower()
+        if "/.codex/" in lower_path:
+            return "codex"
+        if "/.claude/" in lower_path or "/.config/claude/" in lower_path:
+            return "claude"
+
+    return "claude"
 
 
 def get_tty():
@@ -210,7 +243,7 @@ def main():
     except json.JSONDecodeError:
         sys.exit(1)
 
-    source = "codex" if data.get("transcript_path") else "claude"
+    source = parse_source_arg() or infer_source(data)
     session_id = data.get("session_id", "unknown")
     event = data.get("hook_event_name", "")
     cwd = data.get("cwd", "")

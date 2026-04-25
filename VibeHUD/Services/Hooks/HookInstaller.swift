@@ -73,7 +73,7 @@ struct HookInstaller {
         }
 
         let python = detectPython()
-        let command = "\(python) \(ClaudePaths.hookScriptShellPath)"
+        let command = "\(python) \(ClaudePaths.hookScriptShellPath) --source claude"
         let hookEntry: [[String: Any]] = [["type": "command", "command": command]]
         let hookEntryWithTimeout: [[String: Any]] = [["type": "command", "command": command, "timeout": 86400]]
         let withMatcher: [[String: Any]] = [["matcher": "*", "hooks": hookEntry]]
@@ -136,7 +136,7 @@ struct HookInstaller {
         }
 
         let python = detectPython()
-        let command = "\(python) \(CodexPaths.hookScriptShellPath)"
+        let command = "\(python) \(CodexPaths.hookScriptShellPath) --source codex"
         let hookEntry: [[String: Any]] = [[
             "type": "command",
             "command": command,

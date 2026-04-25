@@ -130,13 +130,16 @@ struct CodexIcon: View {
                 x: (canvasSize.width - drawingSize.width) / 2,
                 y: (canvasSize.height - drawingSize.height) / 2
             )
-            let transform = CGAffineTransform(translationX: origin.x, y: origin.y).scaledBy(x: scale, y: scale)
+            let sourceBounds = CGRect(x: 3, y: 3, width: 18, height: 18)
+            let iconPadding: CGFloat = 1
+            let iconScale = (24 - iconPadding * 2) / sourceBounds.width
+            let transform = CGAffineTransform(translationX: origin.x, y: origin.y)
+                .scaledBy(x: scale, y: scale)
+                .translatedBy(x: iconPadding, y: iconPadding)
+                .scaledBy(x: iconScale, y: iconScale)
+                .translatedBy(x: -sourceBounds.minX, y: -sourceBounds.minY)
 
-            let background = Path(roundedRect: CGRect(x: 0, y: 0, width: 24, height: 24), cornerRadius: 4.496)
-                .applying(transform)
-            context.fill(background, with: .color(.white))
-
-            let codexShape = Path { p in
+            let outerShape = Path { p in
                 p.move(to: CGPoint(x: 9.064, y: 3.344))
                 p.addCurve(to: CGPoint(x: 11.349, y: 3.032), control1: CGPoint(x: 9.787, y: 3.047), control2: CGPoint(x: 10.573, y: 2.939))
                 p.addCurve(to: CGPoint(x: 14.022, y: 4.307), control1: CGPoint(x: 12.349, y: 3.147), control2: CGPoint(x: 13.240, y: 3.572))
@@ -185,7 +188,10 @@ struct CodexIcon: View {
                 p.addCurve(to: CGPoint(x: 7.227, y: 4.732), control1: CGPoint(x: 6.562, y: 5.758), control2: CGPoint(x: 6.844, y: 5.209))
                 p.addCurve(to: CGPoint(x: 9.064, y: 3.344), control1: CGPoint(x: 7.710, y: 4.119), control2: CGPoint(x: 8.343, y: 3.641))
                 p.closeSubpath()
+            }
+            .applying(transform)
 
+            let centerBar = Path { p in
                 p.move(to: CGPoint(x: 12.546, y: 13.909))
                 p.addCurve(to: CGPoint(x: 12.243, y: 14.006), control1: CGPoint(x: 12.438, y: 13.915), control2: CGPoint(x: 12.334, y: 13.948))
                 p.addCurve(to: CGPoint(x: 12.024, y: 14.237), control1: CGPoint(x: 12.152, y: 14.063), control2: CGPoint(x: 12.076, y: 14.143))
@@ -203,7 +209,10 @@ struct CodexIcon: View {
                 p.addCurve(to: CGPoint(x: 16.182, y: 13.909), control1: CGPoint(x: 16.380, y: 13.921), control2: CGPoint(x: 16.281, y: 13.903))
                 p.addLine(to: CGPoint(x: 12.546, y: 13.909))
                 p.closeSubpath()
+            }
+            .applying(transform)
 
+            let chevron = Path { p in
                 p.move(to: CGPoint(x: 8.462, y: 9.230))
                 p.addCurve(to: CGPoint(x: 8.229, y: 9.007), control1: CGPoint(x: 8.405, y: 9.137), control2: CGPoint(x: 8.324, y: 9.060))
                 p.addCurve(to: CGPoint(x: 7.916, y: 8.926), control1: CGPoint(x: 8.133, y: 8.953), control2: CGPoint(x: 8.025, y: 8.926))
@@ -229,19 +238,9 @@ struct CodexIcon: View {
             }
             .applying(transform)
 
-            let gradient = Gradient(colors: [
-                Color(red: 177 / 255, green: 167 / 255, blue: 1.0),
-                Color(red: 122 / 255, green: 157 / 255, blue: 1.0),
-                Color(red: 57 / 255, green: 65 / 255, blue: 1.0),
-            ])
-            context.fill(
-                codexShape,
-                with: .linearGradient(
-                    gradient,
-                    startPoint: origin,
-                    endPoint: CGPoint(x: origin.x, y: origin.y + drawingSize.height)
-                )
-            )
+            context.fill(outerShape, with: .color(.white))
+            context.fill(centerBar, with: .color(.black))
+            context.fill(chevron, with: .color(.black))
         }
         .frame(width: size, height: size)
     }
